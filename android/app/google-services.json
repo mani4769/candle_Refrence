@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "460361676979",
+    "project_id": "candle-dadeb",
+    "storage_bucket": "candle-dadeb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:460361676979:android:a89bb5af79211457b298c6",
+        "android_client_info": {
+          "package_name": "com.mani_maddy.candle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB15vG5GRJraBFcUKoNg0duIVFMlDnn9d0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="220dp"
+    android:minHeight="140dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+
+
+
+    android:resizeMode="horizontal|vertical"
+
+    android:description="@string/widget_sharednotewidget_description"
+
+    android:initialLayout="@layout/widget_shared_note_native"
+
+
+
+
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen">
+</appwidget-provider>
