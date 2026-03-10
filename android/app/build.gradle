@@ -96,6 +96,10 @@ android {
         versionName "1.0.1"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+        // Appwrite config for widget to fetch data
+        buildConfigField "String", "APPWRITE_PROJECT_ID", "\"${findProperty('APPWRITE_PROJECT_ID') ?: ''}\""
+        buildConfigField "String", "APPWRITE_DATABASE_ID", "\"${findProperty('APPWRITE_DATABASE_ID') ?: ''}\""
+        buildConfigField "String", "APPWRITE_API_KEY", "\"${findProperty('APPWRITE_API_KEY') ?: ''}\""
     }
     signingConfigs {
         debug {

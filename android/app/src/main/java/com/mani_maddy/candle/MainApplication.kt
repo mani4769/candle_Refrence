@@ -15,7 +15,6 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
-import com.mani_maddy.candle.widget.WidgetPackage
 
 class MainApplication : Application(), ReactApplication {
 

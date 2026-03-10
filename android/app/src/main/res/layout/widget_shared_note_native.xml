@@ -18,6 +18,20 @@
     android:textSize="14sp"
     android:textStyle="bold" />
 
+  <!-- Drawing image (shown when hasDrawing is true) -->
+  <ImageView
+    android:id="@+id/widget_drawing"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="8dp"
+    android:layout_weight="1"
+    android:scaleType="fitCenter"
+    android:adjustViewBounds="true"
+    android:background="#FFFFFF"
+    android:visibility="gone"
+    android:contentDescription="Drawing" />
+
+  <!-- Text (shown when hasDrawing is false) -->
   <TextView
     android:id="@+id/widget_text"
     android:layout_width="match_parent"
@@ -26,7 +40,7 @@
     android:layout_weight="1"
     android:ellipsize="end"
     android:maxLines="4"
-    android:text="No text yet"
+    android:text="No drawing yet"
     android:textColor="#E5E7EB"
     android:textSize="12sp" />
 

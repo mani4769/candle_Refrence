@@ -37,7 +37,7 @@ export async function ensureAnonymousSession() {
 export const defaultNote = {
   roomId: '',
   roomCode: '',
-  text: '',
+  drawingData: '',
   done: false,
   updatedBy: 'system',
   updatedAt: new Date().toISOString(),
@@ -56,17 +56,17 @@ function toRoomNote(document) {
   return {
     roomId: document.$id,
     roomCode: document.roomCode,
-    text: document.text ?? '',
+    drawingData: document.drawingData ?? '',
     done: Boolean(document.done),
     updatedBy: document.updatedBy ?? 'system',
     updatedAt: document.updatedAt ?? new Date().toISOString(),
   };
 }
 
-function createSharedNotePayload({ roomCode, text, done, updatedBy }) {
+function createSharedNotePayload({ roomCode, drawingData, done, updatedBy }) {
   return {
     roomCode,
-    text,
+    drawingData,
     done,
     updatedBy,
     updatedAt: new Date().toISOString(),
@@ -93,7 +93,7 @@ export async function createRoom({ actor }) {
       APPWRITE_DATABASE_ID,
       APPWRITE_COLLECTION_ID,
       ID.unique(),
-      createSharedNotePayload({ roomCode, text: '', done: false, updatedBy: actor }),
+      createSharedNotePayload({ roomCode, drawingData: '', done: false, updatedBy: actor }),
       [Permission.read(Role.users()), Permission.update(Role.users())],
     );
 
@@ -126,8 +126,8 @@ export async function getRoomById(roomId) {
   return toRoomNote(doc);
 }
 
-export async function updateRoomNote({ roomId, roomCode, text, done, updatedBy }) {
-  const payload = createSharedNotePayload({ roomCode, text, done, updatedBy });
+export async function updateRoomNote({ roomId, roomCode, drawingData, done, updatedBy }) {
+  const payload = createSharedNotePayload({ roomCode, drawingData, done, updatedBy });
   const updated = await databases.updateDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, roomId, payload);
   return toRoomNote(updated);
 }

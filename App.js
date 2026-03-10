@@ -25,6 +25,7 @@ import {
 } from './src/lib/appwrite';
 import { initializeFCMDevice } from './src/widgets/fcmWidgetSync';
 import { readWidgetNote, readSelectedRoom, saveSelectedRoom, syncWidgetNote } from './src/widgets/sharedWidget';
+import DrawingCanvas from './src/components/DrawingCanvas';
 
 function formatLastUpdate(iso) {
   const date = new Date(iso);
@@ -59,12 +60,14 @@ export default function App() {
   const [joinCode, setJoinCode] = useState('');
   const [activeRoom, setActiveRoom] = useState(null);
 
-  const [text, setText] = useState('');
+  const [drawingData, setDrawingData] = useState('');
+  const [drawingPaths, setDrawingPaths] = useState([]);
   const [done, setDone] = useState(false);
   const [updatedBy, setUpdatedBy] = useState('system');
   const [updatedAt, setUpdatedAt] = useState(new Date().toISOString());
   const [fcmToken, setFcmToken] = useState('');
   const latestSyncedAtRef = useRef(updatedAt);
+  const drawingCanvasRef = useRef(null);
 
   useEffect(() => {
     latestSyncedAtRef.current = updatedAt;
@@ -72,10 +75,28 @@ export default function App() {
 
   async function applyRoomState(room, userId) {
     setActiveRoom(room);
-    setText(room.text);
+    setDrawingData(room.drawingData);
     setDone(room.done);
     setUpdatedBy(room.updatedBy);
     setUpdatedAt(room.updatedAt);
+
+    // Parse drawing paths from JSON and load into canvas
+    if (room.drawingData) {
+      try {
+        const parsedPaths = JSON.parse(room.drawingData);
+        setDrawingPaths(parsedPaths);
+        // Load paths into canvas after render
+        setTimeout(() => {
+          if (drawingCanvasRef.current?.loadPaths) {
+            drawingCanvasRef.current.loadPaths(parsedPaths);
+          }
+        }, 100);
+      } catch {
+        setDrawingPaths([]);
+      }
+    } else {
+      setDrawingPaths([]);
+    }
 
     if (userId) {
       await AsyncStorage.setItem(lastRoomKey(userId), room.roomId);
@@ -87,7 +108,8 @@ export default function App() {
 
   async function clearRoomState(userId) {
     setActiveRoom(null);
-    setText(defaultNote.text);
+    setDrawingData(defaultNote.drawingData);
+    setDrawingPaths([]);
     setDone(defaultNote.done);
     setUpdatedBy(defaultNote.updatedBy);
     setUpdatedAt(defaultNote.updatedAt);
@@ -128,7 +150,7 @@ export default function App() {
     }
 
     const widgetNote = await readWidgetNote();
-    setText(widgetNote.text ?? '');
+    setDrawingData(widgetNote.drawingData ?? '');
     setDone(Boolean(widgetNote.done));
     setUpdatedBy(widgetNote.updatedBy ?? 'system');
     setUpdatedAt(widgetNote.updatedAt ?? new Date().toISOString());
@@ -290,7 +312,7 @@ export default function App() {
     }
   }
 
-  async function saveNote(nextText = text, nextDone = done) {
+  async function saveNote(nextDrawingData = drawingData, nextDone = done) {
     if (!activeRoom?.roomId || !user) {
       return;
     }
@@ -300,28 +322,66 @@ export default function App() {
       const updated = await updateRoomNote({
         roomId: activeRoom.roomId,
         roomCode: activeRoom.roomCode,
-        text: nextText,
+        drawingData: nextDrawingData,
         done: nextDone,
         updatedBy: user.name || user.email || 'user',
       });
 
-      await applyRoomState(updated, user.$id);
+      // Apply room state and sync widget
+      setActiveRoom(updated);
+      setDrawingData(updated.drawingData);
+      setDone(updated.done);
+      setUpdatedBy(updated.updatedBy);
+      setUpdatedAt(updated.updatedAt);
+
+      if (user.$id) {
+        await AsyncStorage.setItem(lastRoomKey(user.$id), updated.roomId);
+      }
+
+      await saveSelectedRoom({ roomId: updated.roomId, roomCode: updated.roomCode });
+      await syncWidgetNote(updated);
     } catch (error) {
-      Alert.alert('Save failed', toReadableError(error, 'Could not save shared note.'));
+      Alert.alert('Save failed', toReadableError(error, 'Could not save drawing.'));
     } finally {
       setWorking(false);
     }
   }
 
   async function onClear() {
-    setText('');
+    setDrawingPaths([]);
     setDone(false);
+    
+    // Clear the drawing canvas
+    if (drawingCanvasRef.current?.clearCanvas) {
+      drawingCanvasRef.current.clearCanvas();
+    }
+    
+    // Clear drawing in Appwrite DB (all users will see cleared)
     await saveNote('', false);
   }
 
   async function onDone() {
     setDone(true);
-    await saveNote(text, true);
+    setWorking(true);
+    
+    try {
+      // Get drawing paths as JSON
+      let drawingJson = '';
+      
+      if (drawingCanvasRef.current?.hasDrawing?.()) {
+        const paths = drawingCanvasRef.current.getPaths();
+        if (paths && paths.length > 0) {
+          drawingJson = JSON.stringify(paths);
+        }
+      }
+      
+      // Save JSON drawing data to Appwrite DB (all users will see it)
+      await saveNote(drawingJson, true);
+    } catch (error) {
+      Alert.alert('Save failed', 'Could not save drawing.');
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function onSwitchRoom() {
@@ -455,16 +515,19 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Shared Text Field</Text>
+          <Text style={styles.title}>Candle Drawing</Text>
           <Text style={styles.roomCode}>Room Code: {activeRoom.roomCode}</Text>
 
-          <TextInput
-            multiline
-            value={text}
-            onChangeText={setText}
-            style={styles.textArea}
-            placeholder="Type shared text..."
-            placeholderTextColor="#64748B"
+          <DrawingCanvas
+            ref={drawingCanvasRef}
+            initialPaths={drawingPaths}
+            onSave={(paths) => {
+              setDrawingPaths(paths);
+              // Drawing saved locally - will sync when Done is pressed
+            }}
+            onClear={() => {
+              setDrawingPaths([]);
+            }}
           />
 
           <View style={styles.statusBox}>
@@ -474,14 +537,11 @@ export default function App() {
           </View>
 
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.primaryButton} onPress={() => saveNote()} disabled={working}>
-              <Text style={styles.primaryButtonText}>Save</Text>
-            </TouchableOpacity>
             <TouchableOpacity style={styles.doneButton} onPress={onDone} disabled={working}>
               <Text style={styles.primaryButtonText}>Done</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.clearButton} onPress={onClear} disabled={working}>
-              <Text style={styles.primaryButtonText}>Clear</Text>
+            <TouchableOpacity style={styles.clearAllButton} onPress={onClear} disabled={working}>
+              <Text style={styles.primaryButtonText}>Clear All</Text>
             </TouchableOpacity>
           </View>
 
@@ -593,6 +653,15 @@ const styles = StyleSheet.create({
   clearButton: {
     flex: 1,
     backgroundColor: '#B91C1C',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingVertical: 11,
+  },
+  clearAllButton: {
+    flex: 1,
+    backgroundColor: '#DC2626',
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',

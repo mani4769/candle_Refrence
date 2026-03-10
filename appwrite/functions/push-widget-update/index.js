@@ -19,13 +19,15 @@ function getString(value, fallback = '') {
 }
 
 function toPushData(note) {
+  // Send minimal data - widget will fetch full data from Appwrite
   return {
     roomId: getString(note.roomId || note.$id),
     roomCode: getString(note.roomCode),
-    text: getString(note.text),
     done: getString(note.done, 'false'),
     updatedBy: getString(note.updatedBy, 'push'),
     updatedAt: getString(note.updatedAt, new Date().toISOString()),
+    // Signal to fetch full data including drawingData
+    fetchRequired: 'true',
   };
 }
 

@@ -41,6 +41,7 @@ export async function saveSelectedRoom(room) {
 
 export async function syncWidgetNote(note) {
   // Save to AsyncStorage (native widget reads from here)
+  // note contains: roomCode, drawingData (JSON stroke paths), done, updatedBy, updatedAt
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(note));
   
   // Trigger native widget refresh via NativeModule
