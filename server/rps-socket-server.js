@@ -30,6 +30,7 @@ function createRoomState(roomId, roomCode = '') {
     matchWinner: '',
     phase: 'lobby',
     phaseStartedAt: '',
+    phaseEndsAt: '',
     updatedAt: '',
     updatedBy: '',
     redSocketId: '',
@@ -71,6 +72,8 @@ function toClientState(room) {
     matchWinner: room.matchWinner,
     phase: room.phase,
     phaseStartedAt: room.phaseStartedAt,
+    phaseEndsAt: room.phaseEndsAt,
+    serverNow: new Date().toISOString(),
     updatedAt: room.updatedAt,
     updatedBy: room.updatedBy,
   };
@@ -118,6 +121,7 @@ function startCountdown(io, room) {
   room.roundWinner = '';
   room.phase = 'countdown';
   room.phaseStartedAt = new Date().toISOString();
+  room.phaseEndsAt = new Date(Date.now() + COUNTDOWN_MS).toISOString();
   markUpdated(room);
   emitState(io, room);
 
@@ -158,6 +162,7 @@ function startCountdown(io, room) {
     room.roundWinner = nextRoundWinner;
     room.phase = room.matchWinner ? 'match' : 'result';
     room.phaseStartedAt = new Date().toISOString();
+    room.phaseEndsAt = room.matchWinner ? '' : new Date(Date.now() + RESULT_MS).toISOString();
     markUpdated(room);
     emitState(io, room);
 
@@ -168,6 +173,8 @@ function startCountdown(io, room) {
     room.timers.push(setTimeout(() => {
       if (!room.redOnline || !room.blueOnline) {
         room.phase = 'lobby';
+        room.phaseStartedAt = '';
+        room.phaseEndsAt = '';
         room.redReady = false;
         room.blueReady = false;
         markUpdated(room);
@@ -189,12 +196,15 @@ function startIntro(io, room) {
   room.matchWinner = '';
   room.phase = 'intro';
   room.phaseStartedAt = new Date().toISOString();
+  room.phaseEndsAt = new Date(Date.now() + INTRO_MS).toISOString();
   markUpdated(room);
   emitState(io, room);
 
   room.timers.push(setTimeout(() => {
     if (!room.redOnline || !room.blueOnline || !room.redReady || !room.blueReady) {
       room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
       markUpdated(room);
       emitState(io, room);
       return;
@@ -264,6 +274,7 @@ function removePlayer(io, room, role, clearIdentity = false) {
   room.blueScore = 0;
   room.phase = 'lobby';
   room.phaseStartedAt = '';
+  room.phaseEndsAt = '';
   clearTimers(room);
   markUpdated(room);
   emitState(io, room);
@@ -370,6 +381,7 @@ io.on('connection', (socket) => {
     } else {
       room.phase = 'lobby';
       room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
       markUpdated(room, socket.data.userId);
       emitState(io, room);
     }
@@ -393,8 +405,6 @@ io.on('connection', (socket) => {
       room.blueLastSeenAt = new Date().toISOString();
       room.blueSocketId = socket.id;
     }
-    markUpdated(room, socket.data.userId);
-    emitState(io, room);
   });
 
   socket.on('rps:leave', () => {
@@ -428,6 +438,7 @@ io.on('connection', (socket) => {
     }
     room.phase = 'lobby';
     room.phaseStartedAt = '';
+    room.phaseEndsAt = '';
     room.roundWinner = '';
     room.matchWinner = '';
     room.resolvedRedChoice = 0;

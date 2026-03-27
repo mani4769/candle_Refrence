@@ -150,6 +150,8 @@ function createInitialRpsMatchState(roomCode = '') {
     matchWinner: '',
     phase: 'lobby',
     phaseStartedAt: '',
+    phaseEndsAt: '',
+    serverNow: '',
     updatedAt: '',
     updatedBy: '',
   };
@@ -176,22 +178,22 @@ function getRpsRoleForUser(matchState, userId) {
   return '';
 }
 
-function getRpsCountdownValue(phase, phaseStartedAt, now = Date.now()) {
-  if (!phaseStartedAt || !['intro', 'countdown'].includes(phase)) {
+function getRpsCountdownValue(phase, phaseEndsAt, now = Date.now()) {
+  if (!phaseEndsAt || !['intro', 'countdown'].includes(phase)) {
     return 0;
   }
-  const startedAt = new Date(phaseStartedAt).getTime();
-  if (!Number.isFinite(startedAt)) {
+  const endsAt = new Date(phaseEndsAt).getTime();
+  if (!Number.isFinite(endsAt)) {
     return 0;
   }
-  const elapsed = now - startedAt;
-  if (elapsed < 700) {
+  const remaining = endsAt - now;
+  if (remaining > 1400) {
     return 3;
   }
-  if (elapsed < 1400) {
+  if (remaining > 700) {
     return 2;
   }
-  if (elapsed < 2100) {
+  if (remaining > 0) {
     return 1;
   }
   return 0;
@@ -536,6 +538,7 @@ export default function App() {
   const [rpsRoomMatch, setRpsRoomMatch] = useState(createInitialRpsMatchState());
   const [rpsRoomPresence, setRpsRoomPresence] = useState([]);
   const [rpsRoomNow, setRpsRoomNow] = useState(Date.now());
+  const [rpsServerOffsetMs, setRpsServerOffsetMs] = useState(0);
   const [rpsLocalReadyLock, setRpsLocalReadyLock] = useState(false);
   const [rpsLocalRole, setRpsLocalRole] = useState('');
 
@@ -1675,6 +1678,10 @@ export default function App() {
 
     socket.on('rps:state', (nextState) => {
       setRpsRoomMatch(normalizeRpsMatchState(nextState, activeRoom.roomCode));
+      const nextServerNow = nextState?.serverNow ? new Date(nextState.serverNow).getTime() : 0;
+      if (Number.isFinite(nextServerNow) && nextServerNow > 0) {
+        setRpsServerOffsetMs(nextServerNow - Date.now());
+      }
       setRpsRoomNow(Date.now());
     });
 
@@ -1692,7 +1699,6 @@ export default function App() {
 
     const pingTimer = setInterval(() => {
       socket.emit('rps:ping');
-      setRpsRoomNow(Date.now());
     }, 2000);
 
     return () => {
@@ -1704,6 +1710,16 @@ export default function App() {
       }
     };
   }, [activeRoom?.roomCode, activeRoom?.roomId, activeTab, rpsUseRoomSync, user?.$id]);
+
+  useEffect(() => {
+    if (!rpsUseRoomSync || activeTab !== 'rps' || !['intro', 'countdown'].includes(rpsRoomMatch.phase)) {
+      return undefined;
+    }
+    const roomNowTimer = setInterval(() => {
+      setRpsRoomNow(Date.now());
+    }, 100);
+    return () => clearInterval(roomNowTimer);
+  }, [activeTab, rpsRoomMatch.phase, rpsUseRoomSync]);
 
   useEffect(() => {
     if (!rpsUseRoomSync) {
@@ -1741,7 +1757,7 @@ export default function App() {
 
   const rpsDisplayPhase = rpsUseRoomSync ? rpsRoomMatch.phase : rpsPhase;
   const rpsDisplayCountdown = rpsUseRoomSync
-    ? getRpsCountdownValue(rpsRoomMatch.phase, rpsRoomMatch.phaseStartedAt, rpsRoomNow)
+    ? getRpsCountdownValue(rpsRoomMatch.phase, rpsRoomMatch.phaseEndsAt, rpsRoomNow + rpsServerOffsetMs)
     : rpsCountdown;
   const rpsDisplayRoundWinner = rpsUseRoomSync ? rpsRoomMatch.roundWinner : rpsRoundWinner;
   const rpsDisplayMatchWinner = rpsUseRoomSync ? rpsRoomMatch.matchWinner : rpsMatchWinner;
