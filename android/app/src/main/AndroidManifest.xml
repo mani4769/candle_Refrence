@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.CAMERA"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
@@ -37,12 +38,34 @@
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+
+      <!-- Deep links from widgets -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="candle" android:host="widget"/>
+      </intent-filter>
     </activity>
-    <receiver android:name=".widget.SharedNoteWidget" android:exported="false" android:label="Candle Shared Note">
+    <receiver android:name=".widget.SharedNoteWidget" android:exported="false" android:label="Canvas">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_sharednotewidget"/>
+    </receiver>
+
+    <receiver android:name=".widget.SharedImageWidget" android:exported="false" android:label="Daily Pics">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_sharedimagewidget"/>
+    </receiver>
+
+    <receiver android:name=".widget.SharedStatusWidget" android:exported="false" android:label="Status">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/widgetprovider_sharedstatuswidget"/>
     </receiver>
   </application>
 </manifest>

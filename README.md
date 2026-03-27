@@ -33,6 +33,18 @@ Permissions: read + update for authenticated users.
 
 Recommended indexes: `roomId`, `userId`, `token`
 
+### Collection 3: `saved_drawings`
+
+| Column | Type | Notes |
+|---|---|---|
+| `roomId` | string | required |
+| `userId` | string | required |
+| `drawingData` | string | required, large size (JSON stroke paths) |
+| `createdAt` | datetime | required |
+
+Recommended indexes: `roomId`, `userId`, `createdAt`
+Permissions: document-level owner only (`read`, `update`, `delete` for `Role.user(userId)`).
+
 ---
 
 ## Config file
@@ -45,6 +57,7 @@ export const APPWRITE_PROJECT_ID = '<your-project-id>';
 export const APPWRITE_DATABASE_ID = '<your-database-id>';
 export const APPWRITE_COLLECTION_ID = 'shared_notes';
 export const APPWRITE_DEVICE_TOKENS_COLLECTION_ID = 'device_tokens';
+export const APPWRITE_SAVED_DRAWINGS_COLLECTION_ID = 'saved_drawings';
 ```
 
 ### Android widget config

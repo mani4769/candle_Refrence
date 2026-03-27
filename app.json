@@ -24,6 +24,18 @@
       "package": "com.mani_maddy.candle"
     },
     "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Candle to use your camera"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Candle to access your photos"
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

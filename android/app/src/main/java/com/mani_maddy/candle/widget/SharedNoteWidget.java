@@ -13,8 +13,8 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.net.Uri;
 import android.util.Log;
-import android.view.View;
 import android.widget.RemoteViews;
 
 import com.mani_maddy.candle.MainActivity;
@@ -23,14 +23,12 @@ import com.mani_maddy.candle.R;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Locale;
-import java.util.TimeZone;
+
 
 /**
  * Pure native widget - no JS dependency.
- * Shows drawing from JSON stroke data, status, and updated by/time.
+ * Shows drawing from JSON stroke data in a minimal candle-style card.
  * Click anywhere to open app.
  */
 public class SharedNoteWidget extends AppWidgetProvider {
@@ -40,6 +38,7 @@ public class SharedNoteWidget extends AppWidgetProvider {
   private static final String STORAGE_KEY = "shared_note_widget_state";
   private static final int BITMAP_WIDTH = 500;
   private static final int BITMAP_HEIGHT = 500; // Square bitmap matches square canvas
+  private static final int CANVAS_BG_COLOR = Color.parseColor("#191919");
 
   @Override
   public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
@@ -69,23 +68,12 @@ public class SharedNoteWidget extends AppWidgetProvider {
     JSONObject note = readStoredNote(context);
     Log.d(TAG, "updateWidget called, widgetId: " + widgetId);
 
-    String roomCode = note.optString("roomCode", "No room");
     String drawingData = note.optString("drawingData", "");
-    boolean done = note.optBoolean("done", false);
-    String doneText = done ? "Done" : "Pending";
-    String updatedBy = note.optString("updatedBy", "system");
-    String updatedAt = note.optString("updatedAt", "");
 
     Log.d(TAG, "drawingData length: " + (drawingData != null ? drawingData.length() : 0));
-    Log.d(TAG, "roomCode: " + roomCode + ", done: " + done);
-
-    String timeStr = formatTime(updatedAt);
+    Log.d(TAG, "minimal widget render");
 
     RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_shared_note_native);
-    views.setTextViewText(R.id.widget_title, "Candle " + roomCode);
-    views.setTextViewText(R.id.widget_status, "Status: " + doneText);
-    views.setTextViewText(R.id.widget_by, "By: " + updatedBy + " at " + timeStr);
-
     // Render drawing from JSON stroke data
     Bitmap drawingBitmap = null;
     if (drawingData != null && !drawingData.isEmpty()) {
@@ -97,22 +85,17 @@ public class SharedNoteWidget extends AppWidgetProvider {
     }
 
     if (drawingBitmap != null) {
-      // Show drawing image, hide text
-      views.setViewVisibility(R.id.widget_drawing, View.VISIBLE);
-      views.setViewVisibility(R.id.widget_text, View.GONE);
       views.setImageViewBitmap(R.id.widget_drawing, drawingBitmap);
     } else {
-      // Show text, hide drawing
-      views.setViewVisibility(R.id.widget_drawing, View.GONE);
-      views.setViewVisibility(R.id.widget_text, View.VISIBLE);
-      views.setTextViewText(R.id.widget_text, "No drawing yet");
+      views.setImageViewResource(R.id.widget_drawing, android.R.color.transparent);
     }
 
     // Click anywhere to open app
     Intent launchIntent = new Intent(context, MainActivity.class);
     launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+    launchIntent.setData(Uri.parse("candle://widget/canvas?wid=" + widgetId));
     PendingIntent launchPending = PendingIntent.getActivity(
-        context, 0, launchIntent,
+        context, widgetId, launchIntent,
         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     views.setOnClickPendingIntent(R.id.widget_root, launchPending);
 
@@ -206,7 +189,7 @@ public class SharedNoteWidget extends AppWidgetProvider {
       // Create bitmap and canvas
       Bitmap bitmap = Bitmap.createBitmap(BITMAP_WIDTH, BITMAP_HEIGHT, Bitmap.Config.ARGB_8888);
       Canvas canvas = new Canvas(bitmap);
-      canvas.drawColor(Color.WHITE);  // White background
+      canvas.drawColor(Color.TRANSPARENT);  // Keep widget dark background visible
 
       Paint paint = new Paint();
       paint.setStyle(Paint.Style.STROKE);
@@ -220,10 +203,15 @@ public class SharedNoteWidget extends AppWidgetProvider {
         String color = pathObj.optString("color", "#000000");
         float strokeWidth = (float) pathObj.optDouble("strokeWidth", 4) * scale;
 
+        // Normalize legacy eraser colors to current canvas background.
+        if (isEraserLikeColor(color)) {
+          color = "#191919";
+        }
+
         try {
           paint.setColor(Color.parseColor(color));
         } catch (Exception e) {
-          paint.setColor(Color.BLACK);
+          paint.setColor(CANVAS_BG_COLOR);
         }
         paint.setStrokeWidth(Math.max(strokeWidth, 1f));
 
@@ -239,6 +227,16 @@ public class SharedNoteWidget extends AppWidgetProvider {
       Log.e(TAG, "Failed to render drawing from JSON: " + e.getMessage(), e);
       return null;
     }
+  }
+
+  private boolean isEraserLikeColor(String color) {
+    if (color == null) return false;
+    String normalized = color.trim().toLowerCase(Locale.US);
+    return normalized.equals("#0c1020")
+        || normalized.equals("#11131b")
+        || normalized.equals("#12151d")
+        || normalized.equals("#191919")
+        || normalized.equals("#000000");
   }
 
   private Path parseSvgPathScaled(String d, float scale, float offsetX, float offsetY) {
@@ -275,23 +273,6 @@ public class SharedNoteWidget extends AppWidgetProvider {
     }
     
     return hasPoints ? path : null;
-  }
-
-  private String formatTime(String iso) {
-    if (iso == null || iso.isEmpty()) return "Never";
-    try {
-      // Parse as UTC (Appwrite stores timestamps in UTC)
-      SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
-      isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-      Date date = isoFormat.parse(iso.replace("Z", "").split("\\.")[0]);
-      if (date == null) return "Never";
-      // Format in device's local timezone
-      SimpleDateFormat displayFormat = new SimpleDateFormat("hh:mm a", Locale.getDefault());
-      displayFormat.setTimeZone(TimeZone.getDefault());
-      return displayFormat.format(date);
-    } catch (Exception e) {
-      return "Never";
-    }
   }
 
   private JSONObject readStoredNote(Context context) {

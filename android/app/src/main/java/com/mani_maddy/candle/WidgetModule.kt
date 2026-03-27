@@ -7,6 +7,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.mani_maddy.candle.widget.SharedNoteWidget
+import com.mani_maddy.candle.widget.SharedImageWidget
+import com.mani_maddy.candle.widget.SharedStatusWidget
 
 class WidgetModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     
@@ -17,14 +19,22 @@ class WidgetModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     @ReactMethod
     fun refreshWidget() {
         val context = reactApplicationContext
-        val intent = Intent(context, SharedNoteWidget::class.java)
-        intent.action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-        
         val appWidgetManager = AppWidgetManager.getInstance(context)
-        val widgetComponent = ComponentName(context, SharedNoteWidget::class.java)
-        val appWidgetIds = appWidgetManager.getAppWidgetIds(widgetComponent)
-        
-        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
-        context.sendBroadcast(intent)
+
+        fun broadcastUpdate(clazz: Class<*>) {
+            val widgetComponent = ComponentName(context, clazz)
+            val appWidgetIds = appWidgetManager.getAppWidgetIds(widgetComponent)
+            if (appWidgetIds.isEmpty()) {
+                return
+            }
+            val intent = Intent(context, clazz)
+            intent.action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+            intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
+            context.sendBroadcast(intent)
+        }
+
+        broadcastUpdate(SharedNoteWidget::class.java)
+        broadcastUpdate(SharedImageWidget::class.java)
+        broadcastUpdate(SharedStatusWidget::class.java)
     }
 }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/widget_status_pill_bg"
+  android:clickable="true"
+  android:focusable="true">
+
+  <LinearLayout
+    android:id="@+id/widget_status_pill"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp">
+
+    <TextView
+      android:id="@+id/widget_status_text"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="No status yet"
+      android:textColor="#6F6F6F"
+      android:textSize="13sp"
+      android:includeFontPadding="false"
+      android:maxLines="1"
+      android:ellipsize="end"
+      android:textStyle="bold" />
+
+    <ImageView
+      android:id="@+id/widget_status_yet_icon"
+      android:layout_width="18dp"
+      android:layout_height="18dp"
+      android:layout_marginStart="4dp"
+      android:src="@drawable/widget_yet"
+      android:tint="#6F6F6F"
+      android:alpha="0.85"
+      android:contentDescription="Yet" />
+  </LinearLayout>
+
+</FrameLayout>

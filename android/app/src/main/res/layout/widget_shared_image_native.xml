@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:layout_margin="0dp"
+  android:background="@drawable/widget_note_rounded_bg"
+  android:clipToOutline="true"
+  android:outlineProvider="background"
+  android:clickable="true"
+  android:focusable="true">
+
+  <!-- The widget receives a pre-composed bitmap sized for the widget itself. -->
+  <ImageView
+    android:id="@+id/widget_image_crop"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:adjustViewBounds="true"
+    android:contentDescription="Image crop"
+    android:scaleType="fitXY"
+    android:visibility="gone" />
+
+  <!-- Placeholder overlay (padding + header + empty state). Hidden when an image exists. -->
+  <LinearLayout
+    android:id="@+id/widget_placeholder"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingLeft="16dp"
+    android:paddingTop="14dp"
+    android:paddingRight="16dp"
+    android:paddingBottom="16dp">
+
+    <LinearLayout
+      android:id="@+id/widget_header"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+
+      <ImageView
+        android:id="@+id/widget_logo"
+        android:layout_width="18dp"
+        android:layout_height="28dp"
+        android:layout_marginRight="6dp"
+        android:src="@drawable/widget_spark_logo"
+        android:contentDescription="Spark logo" />
+
+      <ImageView
+        android:id="@+id/widget_wordmark"
+        android:layout_width="64dp"
+        android:layout_height="11dp"
+        android:src="@drawable/widget_spark_wordmark"
+        android:scaleType="fitStart"
+        android:contentDescription="spark" />
+    </LinearLayout>
+
+    <FrameLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_marginTop="14dp"
+      android:layout_weight="1">
+
+      <LinearLayout
+        android:id="@+id/widget_empty_wrap"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <ImageView
+          android:id="@+id/widget_empty_icon"
+          android:layout_width="44dp"
+          android:layout_height="44dp"
+          android:src="@drawable/widget_gallery"
+          android:tint="#6F6F6F"
+          android:alpha="0.85"
+          android:contentDescription="No pics" />
+
+        <LinearLayout
+          android:id="@+id/widget_empty_row"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="10dp"
+          android:orientation="horizontal"
+          android:gravity="center_vertical">
+
+          <TextView
+            android:id="@+id/widget_empty_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="No pics yet"
+            android:textColor="#6F6F6F"
+            android:textSize="14dp"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textStyle="bold" />
+
+          <ImageView
+            android:id="@+id/widget_empty_yet_icon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginLeft="8dp"
+            android:src="@drawable/widget_yet"
+            android:tint="#6F6F6F"
+            android:alpha="0.85"
+            android:contentDescription="Yet" />
+        </LinearLayout>
+      </LinearLayout>
+    </FrameLayout>
+  </LinearLayout>
+
+</FrameLayout>
