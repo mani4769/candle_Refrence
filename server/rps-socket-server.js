@@ -1,7 +1,7 @@
 const http = require('http');
 const { Server } = require('socket.io');
 
-const PORT = Number(process.env.RPS_SOCKET_PORT || 3001);
+const PORT = Number(process.env.PORT || process.env.RPS_SOCKET_PORT || 3001);
 const INTRO_MS = 2100;
 const COUNTDOWN_MS = 2100;
 const RESULT_MS = 1000;

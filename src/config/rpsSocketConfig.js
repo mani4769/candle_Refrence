@@ -1,1 +1,1 @@
-export const RPS_SOCKET_URL = 'http://192.168.31.228:3001';
+export const RPS_SOCKET_URL = 'https://candle-refrence.onrender.com';
