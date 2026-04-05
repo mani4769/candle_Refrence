@@ -640,10 +640,12 @@ const CameraModal = ({ visible, onClose, onCapture, zoomIndex, setZoomIndex, ope
                       ) : null}
                     </View>
                   ) : selectedStatus ? (
-                    <View style={styles.previewStatusDisplay}>
-                      <Text style={styles.previewStatusDisplayText} numberOfLines={1}>{selectedStatus}</Text>
+                    <View style={styles.previewStatusDisplayWrap}>
+                      <View style={styles.previewStatusDisplay}>
+                        <Text style={styles.previewStatusDisplayText} numberOfLines={1}>{selectedStatus}</Text>
+                      </View>
                       <TouchableOpacity style={styles.previewStatusClose} onPress={clearPreviewStatus}>
-                        <Ionicons name="close" size={16} color="#FFFFFF" />
+                        <Ionicons name="close" size={21} color="#FFFFFF" />
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -936,6 +938,7 @@ const styles = StyleSheet.create({
     right: 16,
     bottom: 16,
     alignItems: 'center',
+    overflow: 'visible',
   },
   previewAddStatusChip: {
     minWidth: 156,
@@ -953,27 +956,27 @@ const styles = StyleSheet.create({
     fontFamily: 'Open Sans Hebrew',
   },
   previewStatusComposer: {
-    width: '100%',
-    minHeight: 42,
-    borderRadius: 21,
+    width: 367,
+    height: 58,
+    borderRadius: 50,
     backgroundColor: 'rgba(26, 27, 31, 0.9)',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 14,
-    paddingRight: 6,
+    paddingLeft: 20,
+    paddingRight: 10,
   },
   previewStatusInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     paddingVertical: 0,
     marginRight: 10,
   },
   previewStatusAddButton: {
-    minWidth: 74,
-    height: 32,
-    borderRadius: 16,
+    width: 97,
+    height: 38,
+    borderRadius: 20,
     backgroundColor: '#F50067',
     alignItems: 'center',
     justifyContent: 'center',
@@ -985,16 +988,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: 'Open Sans Hebrew',
   },
-  previewStatusDisplay: {
-    minHeight: 42,
-    maxWidth: '100%',
-    borderRadius: 21,
-    backgroundColor: 'rgba(26, 27, 31, 0.86)',
-    flexDirection: 'row',
+  previewStatusDisplayWrap: {
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingLeft: 16,
-    paddingRight: 8,
+    paddingRight: 48,
+    maxWidth: '100%',
+    marginLeft: 26,
+  },
+  previewStatusDisplay: {
+    width: 266,
+    height: 58,
+    borderRadius: 50,
+    backgroundColor: 'rgba(26, 27, 31, 0.86)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   previewStatusDisplayText: {
     color: '#FFFFFF',
@@ -1003,13 +1012,16 @@ const styles = StyleSheet.create({
     maxWidth: 220,
   },
   previewStatusClose: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    position: 'absolute',
+    right: 0,
+    top: '50%',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
     backgroundColor: '#0F1014',
+    marginTop: -19,
   },
   frontFlashOverlay: {
     ...StyleSheet.absoluteFillObject,

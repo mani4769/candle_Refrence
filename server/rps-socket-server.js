@@ -6,10 +6,22 @@ const INTRO_MS = 2100;
 const COUNTDOWN_MS = 2100;
 const RESULT_MS = 1000;
 const OFFLINE_MS = 7000;
+const TTT_DRAW_RESET_MS = 1100;
+const TTT_WIN_LINES = [
+  [0, 1, 2],
+  [3, 4, 5],
+  [6, 7, 8],
+  [0, 3, 6],
+  [1, 4, 7],
+  [2, 5, 8],
+  [0, 4, 8],
+  [2, 4, 6],
+];
 
-const rooms = new Map();
+const rpsRooms = new Map();
+const tttRooms = new Map();
 
-function createRoomState(roomId, roomCode = '') {
+function createPlayerRoomState(roomId, roomCode = '') {
   return {
     roomId,
     roomCode,
@@ -20,14 +32,6 @@ function createRoomState(roomId, roomCode = '') {
     blueOnline: false,
     redReady: false,
     blueReady: false,
-    redChoice: 0,
-    blueChoice: 0,
-    resolvedRedChoice: 0,
-    resolvedBlueChoice: 0,
-    redScore: 0,
-    blueScore: 0,
-    roundWinner: '',
-    matchWinner: '',
     phase: 'lobby',
     phaseStartedAt: '',
     phaseEndsAt: '',
@@ -41,18 +45,96 @@ function createRoomState(roomId, roomCode = '') {
   };
 }
 
-function getRoom(roomId, roomCode = '') {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, createRoomState(roomId, roomCode));
+function createRpsRoomState(roomId, roomCode = '') {
+  return {
+    ...createPlayerRoomState(roomId, roomCode),
+    redChoice: 0,
+    blueChoice: 0,
+    resolvedRedChoice: 0,
+    resolvedBlueChoice: 0,
+    redScore: 0,
+    blueScore: 0,
+    roundWinner: '',
+    matchWinner: '',
+  };
+}
+
+function createTttRoomState(roomId, roomCode = '') {
+  return {
+    ...createPlayerRoomState(roomId, roomCode),
+    board: Array(9).fill(''),
+    currentTurn: 'red',
+    startingTurn: 'red',
+    winningCells: [],
+    roundWinner: '',
+    matchWinner: '',
+  };
+}
+
+function getRoom(store, createRoomState, roomId, roomCode = '') {
+  if (!store.has(roomId)) {
+    store.set(roomId, createRoomState(roomId, roomCode));
   }
-  const room = rooms.get(roomId);
+  const room = store.get(roomId);
   if (roomCode && !room.roomCode) {
     room.roomCode = roomCode;
   }
   return room;
 }
 
-function toClientState(room) {
+function clearTimers(room) {
+  room.timers.forEach(clearTimeout);
+  room.timers = [];
+}
+
+function markUpdated(room, userId = '') {
+  room.updatedAt = new Date().toISOString();
+  room.updatedBy = userId;
+}
+
+function roleForSocket(room, socket) {
+  if (room.redSocketId === socket.id) {
+    return 'red';
+  }
+  if (room.blueSocketId === socket.id) {
+    return 'blue';
+  }
+  if (room.redPlayerId === socket.data.userId) {
+    return 'red';
+  }
+  if (room.bluePlayerId === socket.data.userId) {
+    return 'blue';
+  }
+  return '';
+}
+
+function assignRole(room, socket, roomCode) {
+  let role = '';
+
+  if (room.redPlayerId === socket.data.userId || !room.redPlayerId) {
+    room.redPlayerId = socket.data.userId;
+    room.redOnline = true;
+    room.redSocketId = socket.id;
+    room.redLastSeenAt = new Date().toISOString();
+    role = 'red';
+  } else if (room.bluePlayerId === socket.data.userId || !room.bluePlayerId) {
+    room.bluePlayerId = socket.data.userId;
+    room.blueOnline = true;
+    room.blueSocketId = socket.id;
+    room.blueLastSeenAt = new Date().toISOString();
+    role = 'blue';
+  } else {
+    role = room.redOnline ? 'blue' : 'red';
+  }
+
+  if (roomCode && !room.roomCode) {
+    room.roomCode = roomCode;
+  }
+
+  return role;
+}
+
+function toRpsClientState(room) {
   return {
     version: room.version,
     roomCode: room.roomCode,
@@ -79,21 +161,11 @@ function toClientState(room) {
   };
 }
 
-function clearTimers(room) {
-  room.timers.forEach(clearTimeout);
-  room.timers = [];
+function emitRpsState(io, room) {
+  io.to(room.roomId).emit('rps:state', toRpsClientState(room));
 }
 
-function markUpdated(room, userId = '') {
-  room.updatedAt = new Date().toISOString();
-  room.updatedBy = userId;
-}
-
-function emitState(io, room) {
-  io.to(room.roomId).emit('rps:state', toClientState(room));
-}
-
-function resolveResult(blueChoice, redChoice) {
+function resolveRpsResult(blueChoice, redChoice) {
   if (blueChoice && redChoice) {
     if (blueChoice === redChoice) {
       return 'DRAW';
@@ -112,7 +184,7 @@ function resolveResult(blueChoice, redChoice) {
   return 'DRAW';
 }
 
-function startCountdown(io, room) {
+function startRpsCountdown(io, room) {
   clearTimers(room);
   room.redChoice = 0;
   room.blueChoice = 0;
@@ -123,10 +195,10 @@ function startCountdown(io, room) {
   room.phaseStartedAt = new Date().toISOString();
   room.phaseEndsAt = new Date(Date.now() + COUNTDOWN_MS).toISOString();
   markUpdated(room);
-  emitState(io, room);
+  emitRpsState(io, room);
 
   room.timers.push(setTimeout(() => {
-    const result = resolveResult(room.blueChoice, room.redChoice);
+    const result = resolveRpsResult(room.blueChoice, room.redChoice);
     let nextRoundWinner = '';
 
     room.resolvedBlueChoice = room.blueChoice;
@@ -164,7 +236,7 @@ function startCountdown(io, room) {
     room.phaseStartedAt = new Date().toISOString();
     room.phaseEndsAt = room.matchWinner ? '' : new Date(Date.now() + RESULT_MS).toISOString();
     markUpdated(room);
-    emitState(io, room);
+    emitRpsState(io, room);
 
     if (room.matchWinner) {
       return;
@@ -178,15 +250,15 @@ function startCountdown(io, room) {
         room.redReady = false;
         room.blueReady = false;
         markUpdated(room);
-        emitState(io, room);
+        emitRpsState(io, room);
         return;
       }
-      startCountdown(io, room);
+      startRpsCountdown(io, room);
     }, RESULT_MS));
   }, COUNTDOWN_MS));
 }
 
-function startIntro(io, room) {
+function startRpsIntro(io, room) {
   clearTimers(room);
   room.redChoice = 0;
   room.blueChoice = 0;
@@ -198,7 +270,7 @@ function startIntro(io, room) {
   room.phaseStartedAt = new Date().toISOString();
   room.phaseEndsAt = new Date(Date.now() + INTRO_MS).toISOString();
   markUpdated(room);
-  emitState(io, room);
+  emitRpsState(io, room);
 
   room.timers.push(setTimeout(() => {
     if (!room.redOnline || !room.blueOnline || !room.redReady || !room.blueReady) {
@@ -206,78 +278,222 @@ function startIntro(io, room) {
       room.phaseStartedAt = '';
       room.phaseEndsAt = '';
       markUpdated(room);
-      emitState(io, room);
+      emitRpsState(io, room);
       return;
     }
-    startCountdown(io, room);
+    startRpsCountdown(io, room);
   }, INTRO_MS));
 }
 
-function maybeStartMatch(io, room) {
+function maybeStartRpsMatch(io, room) {
   if (room.phase !== 'lobby') {
     return;
   }
   if (room.redPlayerId && room.bluePlayerId && room.redOnline && room.blueOnline && room.redReady && room.blueReady) {
-    startIntro(io, room);
+    startRpsIntro(io, room);
   } else {
     markUpdated(room);
-    emitState(io, room);
+    emitRpsState(io, room);
   }
 }
 
-function roleForSocket(room, socket) {
-  if (room.redSocketId === socket.id) {
-    return 'red';
-  }
-  if (room.blueSocketId === socket.id) {
-    return 'blue';
-  }
-  if (room.redPlayerId === socket.data.userId) {
-    return 'red';
-  }
-  if (room.bluePlayerId === socket.data.userId) {
-    return 'blue';
-  }
-  return '';
+function resetRpsRoom(room) {
+  room.redReady = false;
+  room.blueReady = false;
+  room.redChoice = 0;
+  room.blueChoice = 0;
+  room.resolvedRedChoice = 0;
+  room.resolvedBlueChoice = 0;
+  room.redScore = 0;
+  room.blueScore = 0;
+  room.roundWinner = '';
+  room.matchWinner = '';
+  room.phase = 'lobby';
+  room.phaseStartedAt = '';
+  room.phaseEndsAt = '';
+  clearTimers(room);
 }
 
-function removePlayer(io, room, role, clearIdentity = false) {
+function removeRpsPlayer(io, room, role, clearIdentity = false) {
   if (!role) {
     return;
   }
-  const isRed = role === 'red';
+
   if (clearIdentity) {
-    if (isRed) {
+    if (role === 'red') {
       room.redPlayerId = '';
     } else {
       room.bluePlayerId = '';
     }
   }
-  if (isRed) {
+
+  if (role === 'red') {
     room.redOnline = false;
-    room.redReady = false;
-    room.redChoice = 0;
     room.redSocketId = '';
     room.redLastSeenAt = '';
   } else {
     room.blueOnline = false;
-    room.blueReady = false;
-    room.blueChoice = 0;
     room.blueSocketId = '';
     room.blueLastSeenAt = '';
   }
-  room.resolvedRedChoice = 0;
-  room.resolvedBlueChoice = 0;
+
+  resetRpsRoom(room);
+  markUpdated(room);
+  emitRpsState(io, room);
+}
+
+function toTttClientState(room) {
+  return {
+    version: room.version,
+    roomCode: room.roomCode,
+    redPlayerId: room.redPlayerId,
+    bluePlayerId: room.bluePlayerId,
+    redOnline: room.redOnline,
+    blueOnline: room.blueOnline,
+    redReady: room.redReady,
+    blueReady: room.blueReady,
+    board: room.board,
+    currentTurn: room.currentTurn,
+    startingTurn: room.startingTurn,
+    winningCells: room.winningCells,
+    roundWinner: room.roundWinner,
+    matchWinner: room.matchWinner,
+    phase: room.phase,
+    phaseStartedAt: room.phaseStartedAt,
+    phaseEndsAt: room.phaseEndsAt,
+    serverNow: new Date().toISOString(),
+    updatedAt: room.updatedAt,
+    updatedBy: room.updatedBy,
+  };
+}
+
+function emitTttState(io, room) {
+  io.to(room.roomId).emit('ttt:state', toTttClientState(room));
+}
+
+function resetTttBoard(room, keepWinner = false) {
+  room.board = Array(9).fill('');
+  room.winningCells = [];
+  room.currentTurn = room.startingTurn;
   room.roundWinner = '';
-  room.matchWinner = '';
-  room.redScore = 0;
-  room.blueScore = 0;
+  if (!keepWinner) {
+    room.matchWinner = '';
+  }
+}
+
+function startTttIntro(io, room) {
+  clearTimers(room);
+  room.startingTurn = room.startingTurn || 'red';
+  resetTttBoard(room);
+  room.phase = 'intro';
+  room.phaseStartedAt = new Date().toISOString();
+  room.phaseEndsAt = new Date(Date.now() + INTRO_MS).toISOString();
+  markUpdated(room);
+  emitTttState(io, room);
+
+  room.timers.push(setTimeout(() => {
+    if (!room.redOnline || !room.blueOnline || !room.redReady || !room.blueReady) {
+      room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
+      markUpdated(room);
+      emitTttState(io, room);
+      return;
+    }
+
+    room.phase = 'playing';
+    room.phaseStartedAt = new Date().toISOString();
+    room.phaseEndsAt = '';
+    room.currentTurn = room.startingTurn;
+    markUpdated(room);
+    emitTttState(io, room);
+  }, INTRO_MS));
+}
+
+function maybeStartTttMatch(io, room) {
+  if (room.phase !== 'lobby') {
+    return;
+  }
+  if (room.redPlayerId && room.bluePlayerId && room.redOnline && room.blueOnline && room.redReady && room.blueReady) {
+    startTttIntro(io, room);
+  } else {
+    markUpdated(room);
+    emitTttState(io, room);
+  }
+}
+
+function getTttWinningCells(board) {
+  for (const line of TTT_WIN_LINES) {
+    const [a, b, c] = line;
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return line;
+    }
+  }
+  return [];
+}
+
+function scheduleTttDrawReset(io, room) {
+  clearTimers(room);
+  room.timers.push(setTimeout(() => {
+    if (!room.redOnline || !room.blueOnline || !room.redReady || !room.blueReady) {
+      room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
+      room.redReady = false;
+      room.blueReady = false;
+      markUpdated(room);
+      emitTttState(io, room);
+      return;
+    }
+
+    room.startingTurn = room.startingTurn === 'red' ? 'blue' : 'red';
+    resetTttBoard(room);
+    room.phase = 'playing';
+    room.phaseStartedAt = new Date().toISOString();
+    room.phaseEndsAt = '';
+    room.currentTurn = room.startingTurn;
+    markUpdated(room);
+    emitTttState(io, room);
+  }, TTT_DRAW_RESET_MS));
+}
+
+function resetTttRoom(room) {
+  room.redReady = false;
+  room.blueReady = false;
+  room.startingTurn = 'red';
+  resetTttBoard(room);
   room.phase = 'lobby';
   room.phaseStartedAt = '';
   room.phaseEndsAt = '';
   clearTimers(room);
+}
+
+function removeTttPlayer(io, room, role, clearIdentity = false) {
+  if (!role) {
+    return;
+  }
+
+  if (clearIdentity) {
+    if (role === 'red') {
+      room.redPlayerId = '';
+    } else {
+      room.bluePlayerId = '';
+    }
+  }
+
+  if (role === 'red') {
+    room.redOnline = false;
+    room.redSocketId = '';
+    room.redLastSeenAt = '';
+  } else {
+    room.blueOnline = false;
+    room.blueSocketId = '';
+    room.blueLastSeenAt = '';
+  }
+
+  resetTttRoom(room);
   markUpdated(room);
-  emitState(io, room);
+  emitTttState(io, room);
 }
 
 const httpServer = http.createServer();
@@ -297,39 +513,25 @@ io.on('connection', (socket) => {
     socket.data.userId = userId;
     socket.join(roomId);
 
-    const room = getRoom(roomId, roomCode);
-
-    let role = '';
-    if (room.redPlayerId === userId || !room.redPlayerId) {
-      room.redPlayerId = userId;
-      room.redOnline = true;
-      room.redSocketId = socket.id;
-      room.redLastSeenAt = new Date().toISOString();
-      role = 'red';
-    } else if (room.bluePlayerId === userId || !room.bluePlayerId) {
-      room.bluePlayerId = userId;
-      room.blueOnline = true;
-      room.blueSocketId = socket.id;
-      room.blueLastSeenAt = new Date().toISOString();
-      role = 'blue';
-    } else {
-      role = room.redOnline ? 'blue' : 'red';
-    }
+    const room = getRoom(rpsRooms, createRpsRoomState, roomId, roomCode);
+    const role = assignRole(room, socket, roomCode);
 
     socket.emit('rps:role', { role });
     markUpdated(room, userId);
-    emitState(io, room);
+    emitRpsState(io, room);
   });
 
   socket.on('rps:start', () => {
-    const room = rooms.get(socket.data.roomId);
+    const room = rpsRooms.get(socket.data.roomId);
     if (!room) {
       return;
     }
+
     const role = roleForSocket(room, socket);
     if (!role) {
       return;
     }
+
     if (role === 'red') {
       room.redReady = true;
       room.redOnline = true;
@@ -341,15 +543,17 @@ io.on('connection', (socket) => {
       room.blueSocketId = socket.id;
       room.blueLastSeenAt = new Date().toISOString();
     }
+
     markUpdated(room, socket.data.userId);
-    maybeStartMatch(io, room);
+    maybeStartRpsMatch(io, room);
   });
 
   socket.on('rps:choice', ({ choiceId }) => {
-    const room = rooms.get(socket.data.roomId);
+    const room = rpsRooms.get(socket.data.roomId);
     if (!room || room.phase !== 'countdown' || room.matchWinner) {
       return;
     }
+
     const role = roleForSocket(room, socket);
     if (role === 'red' && !room.redChoice) {
       room.redChoice = Number(choiceId) || 0;
@@ -357,15 +561,17 @@ io.on('connection', (socket) => {
     if (role === 'blue' && !room.blueChoice) {
       room.blueChoice = Number(choiceId) || 0;
     }
+
     markUpdated(room, socket.data.userId);
-    emitState(io, room);
+    emitRpsState(io, room);
   });
 
   socket.on('rps:replay', () => {
-    const room = rooms.get(socket.data.roomId);
+    const room = rpsRooms.get(socket.data.roomId);
     if (!room) {
       return;
     }
+
     room.redScore = 0;
     room.blueScore = 0;
     room.redChoice = 0;
@@ -376,26 +582,29 @@ io.on('connection', (socket) => {
     room.matchWinner = '';
     room.redReady = Boolean(room.redPlayerId && room.redOnline);
     room.blueReady = Boolean(room.bluePlayerId && room.blueOnline);
+
     if (room.redReady && room.blueReady) {
-      startIntro(io, room);
+      startRpsIntro(io, room);
     } else {
       room.phase = 'lobby';
       room.phaseStartedAt = '';
       room.phaseEndsAt = '';
       markUpdated(room, socket.data.userId);
-      emitState(io, room);
+      emitRpsState(io, room);
     }
   });
 
   socket.on('rps:ping', () => {
-    const room = rooms.get(socket.data.roomId);
+    const room = rpsRooms.get(socket.data.roomId);
     if (!room) {
       return;
     }
+
     const role = roleForSocket(room, socket);
     if (!role) {
       return;
     }
+
     if (role === 'red') {
       room.redOnline = true;
       room.redLastSeenAt = new Date().toISOString();
@@ -408,56 +617,240 @@ io.on('connection', (socket) => {
   });
 
   socket.on('rps:leave', () => {
-    const room = rooms.get(socket.data.roomId);
+    const room = rpsRooms.get(socket.data.roomId);
     if (!room) {
       return;
     }
-    removePlayer(io, room, roleForSocket(room, socket), true);
+    removeRpsPlayer(io, room, roleForSocket(room, socket), true);
   });
 
-  socket.on('disconnect', () => {
-    const room = rooms.get(socket.data.roomId);
+  socket.on('ttt:join', ({ roomId, roomCode, userId }) => {
+    if (!roomId || !userId) {
+      return;
+    }
+
+    socket.data.roomId = roomId;
+    socket.data.userId = userId;
+    socket.join(roomId);
+
+    const room = getRoom(tttRooms, createTttRoomState, roomId, roomCode);
+    const role = assignRole(room, socket, roomCode);
+
+    socket.emit('ttt:role', { role });
+    markUpdated(room, userId);
+    emitTttState(io, room);
+  });
+
+  socket.on('ttt:start', () => {
+    const room = tttRooms.get(socket.data.roomId);
     if (!room) {
       return;
     }
+
     const role = roleForSocket(room, socket);
     if (!role) {
       return;
     }
 
     if (role === 'red') {
-      room.redOnline = false;
-      room.redReady = false;
-      room.redChoice = 0;
-      room.redSocketId = '';
+      room.redReady = true;
+      room.redOnline = true;
+      room.redSocketId = socket.id;
+      room.redLastSeenAt = new Date().toISOString();
     } else {
-      room.blueOnline = false;
-      room.blueReady = false;
-      room.blueChoice = 0;
-      room.blueSocketId = '';
+      room.blueReady = true;
+      room.blueOnline = true;
+      room.blueSocketId = socket.id;
+      room.blueLastSeenAt = new Date().toISOString();
     }
-    room.phase = 'lobby';
-    room.phaseStartedAt = '';
-    room.phaseEndsAt = '';
-    room.roundWinner = '';
-    room.matchWinner = '';
-    room.resolvedRedChoice = 0;
-    room.resolvedBlueChoice = 0;
-    clearTimers(room);
-    markUpdated(room, socket.data.userId);
-    emitState(io, room);
 
-    setTimeout(() => {
-      const stillRoom = rooms.get(socket.data.roomId);
-      if (!stillRoom) {
-        return;
+    markUpdated(room, socket.data.userId);
+    maybeStartTttMatch(io, room);
+  });
+
+  socket.on('ttt:move', ({ cellIndex }) => {
+    const room = tttRooms.get(socket.data.roomId);
+    if (!room || room.phase !== 'playing' || room.matchWinner) {
+      return;
+    }
+
+    const role = roleForSocket(room, socket);
+    const index = Number(cellIndex);
+    if (!role || !Number.isInteger(index) || index < 0 || index > 8) {
+      return;
+    }
+    if (room.currentTurn !== role || room.board[index]) {
+      return;
+    }
+
+    room.board[index] = role === 'red' ? 'X' : 'O';
+    const winningCells = getTttWinningCells(room.board);
+
+    if (winningCells.length) {
+      room.winningCells = winningCells;
+      room.roundWinner = role === 'red' ? 'RED WINS' : 'BLUE WINS';
+      room.matchWinner = room.roundWinner;
+      room.phase = 'match';
+      room.phaseStartedAt = new Date().toISOString();
+      room.phaseEndsAt = '';
+      room.startingTurn = role === 'red' ? 'blue' : 'red';
+      clearTimers(room);
+    } else if (room.board.every(Boolean)) {
+      room.winningCells = [];
+      room.roundWinner = 'DRAW';
+      room.matchWinner = '';
+      room.phase = 'draw';
+      room.phaseStartedAt = new Date().toISOString();
+      room.phaseEndsAt = '';
+      markUpdated(room, socket.data.userId);
+      emitTttState(io, room);
+      scheduleTttDrawReset(io, room);
+      return;
+    } else {
+      room.winningCells = [];
+      room.roundWinner = '';
+      room.currentTurn = role === 'red' ? 'blue' : 'red';
+      room.phase = 'playing';
+      room.phaseStartedAt = new Date().toISOString();
+      room.phaseEndsAt = '';
+    }
+
+    markUpdated(room, socket.data.userId);
+    emitTttState(io, room);
+  });
+
+  socket.on('ttt:replay', () => {
+    const room = tttRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+
+    room.redReady = Boolean(room.redPlayerId && room.redOnline);
+    room.blueReady = Boolean(room.bluePlayerId && room.blueOnline);
+    room.startingTurn = room.startingTurn === 'blue' ? 'blue' : 'red';
+    resetTttBoard(room);
+
+    if (room.redReady && room.blueReady) {
+      startTttIntro(io, room);
+    } else {
+      room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
+      markUpdated(room, socket.data.userId);
+      emitTttState(io, room);
+    }
+  });
+
+  socket.on('ttt:ping', () => {
+    const room = tttRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+
+    const role = roleForSocket(room, socket);
+    if (!role) {
+      return;
+    }
+
+    if (role === 'red') {
+      room.redOnline = true;
+      room.redLastSeenAt = new Date().toISOString();
+      room.redSocketId = socket.id;
+    } else {
+      room.blueOnline = true;
+      room.blueLastSeenAt = new Date().toISOString();
+      room.blueSocketId = socket.id;
+    }
+  });
+
+  socket.on('ttt:leave', () => {
+    const room = tttRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+    removeTttPlayer(io, room, roleForSocket(room, socket), true);
+  });
+
+  socket.on('disconnect', () => {
+    const rpsRoom = rpsRooms.get(socket.data.roomId);
+    if (rpsRoom) {
+      const rpsRole = roleForSocket(rpsRoom, socket);
+      if (rpsRole) {
+        if (rpsRole === 'red') {
+          rpsRoom.redOnline = false;
+          rpsRoom.redReady = false;
+          rpsRoom.redChoice = 0;
+          rpsRoom.redSocketId = '';
+        } else {
+          rpsRoom.blueOnline = false;
+          rpsRoom.blueReady = false;
+          rpsRoom.blueChoice = 0;
+          rpsRoom.blueSocketId = '';
+        }
+
+        rpsRoom.phase = 'lobby';
+        rpsRoom.phaseStartedAt = '';
+        rpsRoom.phaseEndsAt = '';
+        rpsRoom.roundWinner = '';
+        rpsRoom.matchWinner = '';
+        rpsRoom.resolvedRedChoice = 0;
+        rpsRoom.resolvedBlueChoice = 0;
+        clearTimers(rpsRoom);
+        markUpdated(rpsRoom, socket.data.userId);
+        emitRpsState(io, rpsRoom);
+
+        setTimeout(() => {
+          const stillRoom = rpsRooms.get(socket.data.roomId);
+          if (!stillRoom) {
+            return;
+          }
+          const lastSeen = rpsRole === 'red' ? stillRoom.redLastSeenAt : stillRoom.blueLastSeenAt;
+          const lastSeenMs = lastSeen ? new Date(lastSeen).getTime() : 0;
+          if (!lastSeenMs || (Date.now() - lastSeenMs) >= OFFLINE_MS) {
+            removeRpsPlayer(io, stillRoom, rpsRole, true);
+          }
+        }, OFFLINE_MS);
       }
-      const lastSeen = role === 'red' ? stillRoom.redLastSeenAt : stillRoom.blueLastSeenAt;
-      const lastSeenMs = lastSeen ? new Date(lastSeen).getTime() : 0;
-      if (!lastSeenMs || (Date.now() - lastSeenMs) >= OFFLINE_MS) {
-        removePlayer(io, stillRoom, role, true);
+    }
+
+    const tttRoom = tttRooms.get(socket.data.roomId);
+    if (tttRoom) {
+      const tttRole = roleForSocket(tttRoom, socket);
+      if (tttRole) {
+        if (tttRole === 'red') {
+          tttRoom.redOnline = false;
+          tttRoom.redReady = false;
+          tttRoom.redSocketId = '';
+        } else {
+          tttRoom.blueOnline = false;
+          tttRoom.blueReady = false;
+          tttRoom.blueSocketId = '';
+        }
+
+        tttRoom.phase = 'lobby';
+        tttRoom.phaseStartedAt = '';
+        tttRoom.phaseEndsAt = '';
+        tttRoom.roundWinner = '';
+        tttRoom.matchWinner = '';
+        tttRoom.winningCells = [];
+        tttRoom.board = Array(9).fill('');
+        clearTimers(tttRoom);
+        markUpdated(tttRoom, socket.data.userId);
+        emitTttState(io, tttRoom);
+
+        setTimeout(() => {
+          const stillRoom = tttRooms.get(socket.data.roomId);
+          if (!stillRoom) {
+            return;
+          }
+          const lastSeen = tttRole === 'red' ? stillRoom.redLastSeenAt : stillRoom.blueLastSeenAt;
+          const lastSeenMs = lastSeen ? new Date(lastSeen).getTime() : 0;
+          if (!lastSeenMs || (Date.now() - lastSeenMs) >= OFFLINE_MS) {
+            removeTttPlayer(io, stillRoom, tttRole, true);
+          }
+        }, OFFLINE_MS);
       }
-    }, OFFLINE_MS);
+    }
   });
 });
 
