@@ -3,9 +3,9 @@ const { Server } = require('socket.io');
 
 const PORT = Number(process.env.PORT || process.env.RPS_SOCKET_PORT || 3001);
 const INTRO_MS = 2100;
-const COUNTDOWN_MS = 2100;
+const COUNTDOWN_MS = 5000;
 const RESULT_MS = 1000;
-const OFFLINE_MS = 7000;
+const OFFLINE_MS = 4000;
 const TTT_DRAW_RESET_MS = 1100;
 const TTT_WIN_LINES = [
   [0, 1, 2],
@@ -217,18 +217,7 @@ function startRpsCountdown(io, room) {
         room.matchWinner = 'RED WINS';
       }
     } else {
-      room.blueScore += 1;
-      room.redScore += 1;
-      nextRoundWinner = (!room.blueChoice && !room.redChoice) ? 'NO PICK TIE +1 +1' : 'TIE +1 +1';
-      if (room.blueScore >= 5 || room.redScore >= 5) {
-        if (room.blueScore === room.redScore) {
-          room.matchWinner = 'TIE GAME';
-        } else if (room.blueScore > room.redScore) {
-          room.matchWinner = 'BLUE WINS';
-        } else {
-          room.matchWinner = 'RED WINS';
-        }
-      }
+      nextRoundWinner = (!room.blueChoice && !room.redChoice) ? 'NO PICK DRAW' : 'DRAW';
     }
 
     room.roundWinner = nextRoundWinner;
@@ -605,14 +594,22 @@ io.on('connection', (socket) => {
       return;
     }
 
+    let shouldEmit = false;
     if (role === 'red') {
+      shouldEmit = !room.redOnline;
       room.redOnline = true;
       room.redLastSeenAt = new Date().toISOString();
       room.redSocketId = socket.id;
     } else {
+      shouldEmit = !room.blueOnline;
       room.blueOnline = true;
       room.blueLastSeenAt = new Date().toISOString();
       room.blueSocketId = socket.id;
+    }
+
+    if (shouldEmit) {
+      markUpdated(room, socket.data.userId);
+      emitRpsState(io, room);
     }
   });
 

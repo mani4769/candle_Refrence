@@ -87,11 +87,11 @@ const RPS_MATCH_PLATFORM = 'rps_match_v1';
 const RPS_PRESENCE_PLATFORM = 'rps_presence_v1';
 const RPS_MATCH_USER_ID = '__rps_match__';
 const RPS_INTRO_MS = 2100;
-const RPS_COUNTDOWN_MS = 2100;
+const RPS_COUNTDOWN_MS = 5000;
 const RPS_RESULT_MS = 1000;
 const RPS_RESET_MS = 280;
-const RPS_HEARTBEAT_MS = 2500;
-const RPS_OFFLINE_MS = 6500;
+const RPS_HEARTBEAT_MS = 1000;
+const RPS_OFFLINE_MS = 4000;
 const TTT_INTRO_MS = 2100;
 const TTT_DRAW_RESET_MS = 1100;
 const TTT_BOARD_SIZE = Math.min(HOME_SCREEN_WIDTH - 92, 286);
@@ -212,6 +212,9 @@ function getRpsCountdownValue(phase, phaseEndsAt, now = Date.now()) {
     return 0;
   }
   const remaining = endsAt - now;
+  if (phase === 'countdown') {
+    return Math.max(0, Math.ceil(remaining / 1000));
+  }
   if (remaining > 1400) {
     return 3;
   }
@@ -1803,7 +1806,7 @@ export default function App() {
     setRpsBottomChoice(0);
     setRpsResolvedTopChoice(0);
     setRpsResolvedBottomChoice(0);
-    setRpsCountdown(3);
+    setRpsCountdown(5);
     setRpsRoundWinner('');
     setRpsCanPlay(true);
     setRpsPhase('countdown');
@@ -1862,8 +1865,10 @@ export default function App() {
     }
 
     const timers = [];
-    timers.push(setTimeout(() => setRpsCountdown(2), 700));
-    timers.push(setTimeout(() => setRpsCountdown(1), 1400));
+    timers.push(setTimeout(() => setRpsCountdown(4), 1000));
+    timers.push(setTimeout(() => setRpsCountdown(3), 2000));
+    timers.push(setTimeout(() => setRpsCountdown(2), 3000));
+    timers.push(setTimeout(() => setRpsCountdown(1), 4000));
     timers.push(setTimeout(() => {
       const topChoice = rpsTopChoiceRef.current;
       const bottomChoice = rpsBottomChoiceRef.current;
@@ -1901,28 +1906,14 @@ export default function App() {
           setRpsMatchWinner(nextMatchWinner);
         }
       } else {
-        nextTopScore += 1;
-        nextBottomScore += 1;
-        setRpsTopScore(nextTopScore);
-        setRpsBottomScore(nextBottomScore);
-        nextRoundWinner = !topChoice && !bottomChoice ? 'NO PICK TIE +1 +1' : 'TIE +1 +1';
+        nextRoundWinner = !topChoice && !bottomChoice ? 'NO PICK DRAW' : 'DRAW';
         setRpsRoundWinner(nextRoundWinner);
-        if (nextTopScore >= 5 || nextBottomScore >= 5) {
-          if (nextTopScore === nextBottomScore) {
-            nextMatchWinner = 'TIE GAME';
-          } else if (nextTopScore > nextBottomScore) {
-            nextMatchWinner = 'BLUE WINS';
-          } else {
-            nextMatchWinner = 'RED WINS';
-          }
-          setRpsMatchWinner(nextMatchWinner);
-        }
       }
 
       setRpsCountdown(0);
       setRpsCanPlay(false);
       setRpsPhase(nextMatchWinner ? 'match' : 'result');
-    }, 2100));
+    }, RPS_COUNTDOWN_MS));
 
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
@@ -2006,7 +1997,7 @@ export default function App() {
 
     const pingTimer = setInterval(() => {
       socket.emit('rps:ping');
-    }, 2000);
+    }, RPS_HEARTBEAT_MS);
 
     return () => {
       clearInterval(pingTimer);
@@ -2198,7 +2189,7 @@ export default function App() {
   const rpsWinnerBottom = rpsUseRoomSync
     ? (rpsBottomDisplayRole === 'blue' ? rpsDisplayRoundWinner === 'BLUE WINS' : rpsDisplayRoundWinner === 'RED WINS')
     : rpsDisplayRoundWinner === 'RED WINS';
-  const rpsTieRound = rpsDisplayRoundWinner === 'TIE +1 +1' || rpsDisplayRoundWinner === 'NO PICK TIE +1 +1';
+  const rpsTieRound = rpsDisplayRoundWinner === 'DRAW' || rpsDisplayRoundWinner === 'NO PICK DRAW';
   const rpsShowLobbyOverlay = rpsUseRoomSync
     && (
       !rpsRedOnline
@@ -2209,7 +2200,12 @@ export default function App() {
   const rpsFriendReady = rpsMyRole
     ? (rpsMyRole === 'red' ? rpsRoomMatch.blueReady : rpsRoomMatch.redReady)
     : false;
-  const rpsStartLabel = rpsMyReady ? 'WAITING...' : 'START';
+  const rpsStartLabel = rpsFriendOffline ? 'GO OFFLINE' : (rpsMyReady ? 'WAITING...' : 'START');
+  const rpsLobbyMessage = rpsFriendOffline
+    ? 'Another user is not in the game. Go offline.'
+    : rpsMyReady
+      ? 'Waiting for other user to start the match.'
+      : 'Press start to join the match.';
   const rpsTopRailToneStyle = rpsTopDisplayRole === 'blue' ? styles.rpsRailBlue : styles.rpsRailRed;
   const rpsBottomRailToneStyle = rpsBottomDisplayRole === 'blue' ? styles.rpsRailBlue : styles.rpsRailRed;
   const tttMyRole = tttSyncedRole || tttLocalRole;
@@ -2223,7 +2219,12 @@ export default function App() {
       ? Boolean(tttRoomMatch.redPlayerId && !tttRoomMatch.redOnline)
       : false;
   const tttShowLobbyOverlay = !tttRoomMatch.redOnline || !tttRoomMatch.blueOnline || tttRoomMatch.phase === 'lobby';
-  const tttStartLabel = tttMyReady ? 'WAITING...' : 'START';
+  const tttStartLabel = tttFriendOffline ? 'GO OFFLINE' : (tttMyReady ? 'WAITING...' : 'START');
+  const tttLobbyMessage = tttFriendOffline
+    ? 'Another user is not in the game. Go offline.'
+    : tttMyReady
+      ? 'Waiting for other user to start the game.'
+      : 'Press start after both players join.';
   const tttActiveTone = tttRoomMatch.startingTurn || 'red';
   const tttScreenToneStyle = tttActiveTone === 'blue' ? styles.tttScreenBlue : styles.tttScreenRed;
   const tttWinningLineStyle = getTttWinningLineStyle(tttRoomMatch.winningCells);
@@ -3012,24 +3013,18 @@ export default function App() {
                     <Ionicons name="close" size={20} color="#FFFFFF" />
                   </TouchableOpacity>
                   <Text style={styles.rpsLobbyTitle}>Tic Tac Toe</Text>
-                  <Text style={styles.rpsLobbyText}>
-                    {tttFriendOffline
-                      ? 'Friend offline'
-                      : tttMyReady
-                        ? 'Waiting for other user to start the game.'
-                        : 'Press start after both players join.'}
-                  </Text>
+                  <Text style={styles.rpsLobbyText}>{tttLobbyMessage}</Text>
                   {tttMyRole ? (
                     <Text style={styles.rpsLobbyMeta}>
                       {`You are ${tttMyRole.toUpperCase()}`}
                     </Text>
                   ) : null}
                   <TouchableOpacity
-                    onPress={handleTttStartPress}
-                    disabled={tttFriendOffline || tttMyReady}
+                    onPress={tttFriendOffline ? leaveTttMatchAndGoHome : handleTttStartPress}
+                    disabled={!tttFriendOffline && tttMyReady}
                     style={[
                       styles.rpsLobbyButton,
-                      (tttFriendOffline || tttMyReady) && styles.rpsLobbyButtonDisabled,
+                      (!tttFriendOffline && tttMyReady) && styles.rpsLobbyButtonDisabled,
                     ]}
                     activeOpacity={0.9}
                   >
@@ -3148,8 +3143,8 @@ export default function App() {
                   style={[
                     styles.rpsLargeHand,
                     styles.rpsLargeHandTop,
-                    rpsShowRoundCountdown && rpsDisplayCountdown === 3 && styles.rpsLargeHandTopBeatThree,
-                    rpsShowRoundCountdown && rpsDisplayCountdown === 2 && styles.rpsLargeHandTopBeatTwo,
+                    rpsShowRoundCountdown && (rpsDisplayCountdown === 5 || rpsDisplayCountdown === 3) && styles.rpsLargeHandTopBeatThree,
+                    rpsShowRoundCountdown && (rpsDisplayCountdown === 4 || rpsDisplayCountdown === 2) && styles.rpsLargeHandTopBeatTwo,
                     rpsShowRoundCountdown && rpsDisplayCountdown === 1 && styles.rpsLargeHandTopBeatOne,
                     !rpsShowRoundCountdown && !rpsShowIntroOverlay && rpsWinnerTop && styles.rpsLargeHandTopWin,
                     !rpsShowRoundCountdown && !rpsShowIntroOverlay && rpsWinnerBottom && styles.rpsLargeHandTopLose,
@@ -3179,8 +3174,8 @@ export default function App() {
                   style={[
                     styles.rpsLargeHand,
                     styles.rpsLargeHandBottom,
-                    rpsShowRoundCountdown && rpsDisplayCountdown === 3 && styles.rpsLargeHandBottomBeatThree,
-                    rpsShowRoundCountdown && rpsDisplayCountdown === 2 && styles.rpsLargeHandBottomBeatTwo,
+                    rpsShowRoundCountdown && (rpsDisplayCountdown === 5 || rpsDisplayCountdown === 3) && styles.rpsLargeHandBottomBeatThree,
+                    rpsShowRoundCountdown && (rpsDisplayCountdown === 4 || rpsDisplayCountdown === 2) && styles.rpsLargeHandBottomBeatTwo,
                     rpsShowRoundCountdown && rpsDisplayCountdown === 1 && styles.rpsLargeHandBottomBeatOne,
                     !rpsShowRoundCountdown && !rpsShowIntroOverlay && rpsWinnerBottom && styles.rpsLargeHandBottomWin,
                     !rpsShowRoundCountdown && !rpsShowIntroOverlay && rpsWinnerTop && styles.rpsLargeHandBottomLose,
@@ -3255,24 +3250,18 @@ export default function App() {
                     <Ionicons name="close" size={20} color="#FFFFFF" />
                   </TouchableOpacity>
                   <Text style={styles.rpsLobbyTitle}>Rock Paper Scissors</Text>
-                  <Text style={styles.rpsLobbyText}>
-                    {rpsFriendOffline
-                      ? 'Friend offline'
-                      : rpsMyReady
-                        ? 'Waiting for other user to start the match.'
-                        : 'Press start to join the match.'}
-                  </Text>
+                  <Text style={styles.rpsLobbyText}>{rpsLobbyMessage}</Text>
                   {rpsMyRole ? (
                     <Text style={styles.rpsLobbyMeta}>
                       {`You are ${rpsMyRole.toUpperCase()}`}
                     </Text>
                   ) : null}
                   <TouchableOpacity
-                    onPress={handleRpsStartPress}
-                    disabled={rpsFriendOffline || rpsMyReady}
+                    onPress={rpsFriendOffline ? leaveRpsMatchAndGoHome : handleRpsStartPress}
+                    disabled={!rpsFriendOffline && rpsMyReady}
                     style={[
                       styles.rpsLobbyButton,
-                      (rpsFriendOffline || rpsMyReady)
+                      (!rpsFriendOffline && rpsMyReady)
                         && styles.rpsLobbyButtonDisabled,
                     ]}
                     activeOpacity={0.9}
@@ -3641,7 +3630,7 @@ const styles = StyleSheet.create({
   },
   homeScrollContent: {
     paddingHorizontal: 11,
-    paddingTop: 86,
+    paddingTop: 115,
     paddingBottom: 112,
   },
   homeFixedHeader: {
@@ -3651,7 +3640,7 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 30,
     backgroundColor: DARK_BG,
-    paddingTop: 18,
+    paddingTop: 42,
     paddingHorizontal: 11,
   },
   homeTopRow: {
@@ -4041,7 +4030,7 @@ const styles = StyleSheet.create({
   },
   challengeButton: {
     width: HOME_BOTTOM_ROW_WIDTH + 2,
-    height: 52,
+    height: 58,
     borderRadius: 50,
     borderWidth: 1,
     borderColor: '#DA0053',
