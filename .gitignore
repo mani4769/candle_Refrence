@@ -33,6 +33,7 @@ yarn-error.*
 # local env files
 .env*.local
 fcm-service-account*.json
+*firebase-adminsdk-*.json
 
 # typescript
 *.tsbuildinfo

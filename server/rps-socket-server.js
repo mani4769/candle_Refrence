@@ -7,6 +7,17 @@ const COUNTDOWN_MS = 5000;
 const RESULT_MS = 1000;
 const OFFLINE_MS = 4000;
 const TTT_DRAW_RESET_MS = 1100;
+const AIR_INTRO_MS = 2100;
+const AIR_GOAL_PAUSE_MS = 1000;
+const AIR_MATCH_SCORE = 5;
+const AIR_TICK_MS = 1000 / 60;
+const AIR_PUCK_RADIUS = 0.033;
+const AIR_PADDLE_RADIUS = 0.068;
+const AIR_GOAL_HALF_WIDTH = 0.17;
+const AIR_MAX_PADDLE_SPEED = 1.85;
+const AIR_BASE_PUCK_SPEED = 0.92;
+const AIR_MAX_PUCK_SPEED = 1.75;
+const AIR_PADDLE_INFLUENCE = 0.22;
 const TTT_WIN_LINES = [
   [0, 1, 2],
   [3, 4, 5],
@@ -20,6 +31,7 @@ const TTT_WIN_LINES = [
 
 const rpsRooms = new Map();
 const tttRooms = new Map();
+const airRooms = new Map();
 
 function createPlayerRoomState(roomId, roomCode = '') {
   return {
@@ -42,6 +54,7 @@ function createPlayerRoomState(roomId, roomCode = '') {
     redLastSeenAt: '',
     blueLastSeenAt: '',
     timers: [],
+    loopId: null,
   };
 }
 
@@ -71,6 +84,36 @@ function createTttRoomState(roomId, roomCode = '') {
   };
 }
 
+function createAirRoomState(roomId, roomCode = '') {
+  return {
+    ...createPlayerRoomState(roomId, roomCode),
+    redScore: 0,
+    blueScore: 0,
+    serveRole: Math.random() > 0.5 ? 'red' : 'blue',
+    puck: {
+      x: 0.5,
+      y: 0.68,
+      vx: 0,
+      vy: 0,
+    },
+    redPaddle: {
+      x: 0.5,
+      y: 0.82,
+      vx: 0,
+      vy: 0,
+    },
+    bluePaddle: {
+      x: 0.5,
+      y: 0.18,
+      vx: 0,
+      vy: 0,
+    },
+    matchWinner: '',
+    roundWinner: '',
+    goalScoredBy: '',
+  };
+}
+
 function getRoom(store, createRoomState, roomId, roomCode = '') {
   if (!store.has(roomId)) {
     store.set(roomId, createRoomState(roomId, roomCode));
@@ -85,6 +128,10 @@ function getRoom(store, createRoomState, roomId, roomCode = '') {
 function clearTimers(room) {
   room.timers.forEach(clearTimeout);
   room.timers = [];
+  if (room.loopId) {
+    clearInterval(room.loopId);
+    room.loopId = null;
+  }
 }
 
 function markUpdated(room, userId = '') {
@@ -356,6 +403,310 @@ function toTttClientState(room) {
   };
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function positionAirPaddles(room) {
+  room.redPaddle = {
+    x: 0.5,
+    y: 0.82,
+    vx: 0,
+    vy: 0,
+  };
+  room.bluePaddle = {
+    x: 0.5,
+    y: 0.18,
+    vx: 0,
+    vy: 0,
+  };
+}
+
+function positionAirPuck(room, serveRole = room.serveRole || 'red') {
+  room.serveRole = serveRole;
+  room.puck = {
+    x: 0.5,
+    y: serveRole === 'red' ? 0.68 : 0.32,
+    vx: 0,
+    vy: 0,
+  };
+}
+
+function toAirClientState(room) {
+  return {
+    version: room.version,
+    roomCode: room.roomCode,
+    redPlayerId: room.redPlayerId,
+    bluePlayerId: room.bluePlayerId,
+    redOnline: room.redOnline,
+    blueOnline: room.blueOnline,
+    redReady: room.redReady,
+    blueReady: room.blueReady,
+    redScore: room.redScore,
+    blueScore: room.blueScore,
+    serveRole: room.serveRole,
+    puck: room.puck,
+    redPaddle: room.redPaddle,
+    bluePaddle: room.bluePaddle,
+    roundWinner: room.roundWinner,
+    goalScoredBy: room.goalScoredBy,
+    matchWinner: room.matchWinner,
+    phase: room.phase,
+    phaseStartedAt: room.phaseStartedAt,
+    phaseEndsAt: room.phaseEndsAt,
+    serverNow: new Date().toISOString(),
+    updatedAt: room.updatedAt,
+    updatedBy: room.updatedBy,
+  };
+}
+
+function emitAirState(io, room) {
+  io.to(room.roomId).emit('air:state', toAirClientState(room));
+}
+
+function resetAirRound(room, serveRole = room.serveRole || 'red') {
+  positionAirPaddles(room);
+  positionAirPuck(room, serveRole);
+  room.roundWinner = '';
+  room.goalScoredBy = '';
+}
+
+function bounceAirPuckOffPaddle(room, paddle) {
+  const dx = room.puck.x - paddle.x;
+  const dy = room.puck.y - paddle.y;
+  const distance = Math.hypot(dx, dy) || 0.0001;
+  const overlap = AIR_PADDLE_RADIUS + AIR_PUCK_RADIUS - distance;
+  if (overlap <= 0) {
+    return false;
+  }
+
+  const nx = dx / distance;
+  const ny = dy / distance;
+  room.puck.x += nx * overlap;
+  room.puck.y += ny * overlap;
+
+  const dot = (room.puck.vx * nx) + (room.puck.vy * ny);
+  if (dot < 0) {
+    room.puck.vx -= 2 * dot * nx;
+    room.puck.vy -= 2 * dot * ny;
+  }
+
+  room.puck.vx += paddle.vx * AIR_PADDLE_INFLUENCE;
+  room.puck.vy += paddle.vy * AIR_PADDLE_INFLUENCE;
+
+  const nextSpeed = clamp(Math.hypot(room.puck.vx, room.puck.vy), AIR_BASE_PUCK_SPEED, AIR_MAX_PUCK_SPEED);
+  const nextAngle = Math.atan2(room.puck.vy, room.puck.vx);
+  room.puck.vx = Math.cos(nextAngle) * nextSpeed;
+  room.puck.vy = Math.sin(nextAngle) * nextSpeed;
+  return true;
+}
+
+function scoreAirGoal(io, room, scorerRole) {
+  clearTimers(room);
+
+  room.goalScoredBy = scorerRole;
+  room.roundWinner = scorerRole === 'red' ? 'RED SCORED' : 'BLUE SCORED';
+  room.matchWinner = '';
+
+  if (scorerRole === 'red') {
+    room.redScore += 1;
+    room.serveRole = 'blue';
+    room.puck.x = 0.5;
+    room.puck.y = 0.03;
+  } else {
+    room.blueScore += 1;
+    room.serveRole = 'red';
+    room.puck.x = 0.5;
+    room.puck.y = 0.97;
+  }
+
+  room.puck.vx = 0;
+  room.puck.vy = 0;
+  room.phase = 'goal';
+  room.phaseStartedAt = new Date().toISOString();
+  room.phaseEndsAt = new Date(Date.now() + AIR_GOAL_PAUSE_MS).toISOString();
+
+  if (room.redScore >= AIR_MATCH_SCORE) {
+    room.matchWinner = 'RED WINS';
+    room.phase = 'match';
+    room.phaseEndsAt = '';
+  } else if (room.blueScore >= AIR_MATCH_SCORE) {
+    room.matchWinner = 'BLUE WINS';
+    room.phase = 'match';
+    room.phaseEndsAt = '';
+  }
+
+  markUpdated(room);
+  emitAirState(io, room);
+
+  if (room.matchWinner) {
+    return;
+  }
+
+  room.timers.push(setTimeout(() => {
+    if (!room.redOnline || !room.blueOnline) {
+      room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
+      room.redReady = false;
+      room.blueReady = false;
+      markUpdated(room);
+      emitAirState(io, room);
+      return;
+    }
+
+    resetAirRound(room, room.serveRole);
+    room.phase = 'playing';
+    room.phaseStartedAt = new Date().toISOString();
+    room.phaseEndsAt = '';
+    markUpdated(room);
+    emitAirState(io, room);
+    startAirLoop(io, room);
+  }, AIR_GOAL_PAUSE_MS));
+}
+
+function stepAirRoom(io, room) {
+  if (room.phase !== 'playing') {
+    return;
+  }
+
+  const dt = AIR_TICK_MS / 1000;
+  room.puck.x += room.puck.vx * dt;
+  room.puck.y += room.puck.vy * dt;
+
+  if (Math.abs(room.puck.vx) < 0.001 && Math.abs(room.puck.vy) < 0.001) {
+    room.puck.vx = 0;
+    room.puck.vy = room.serveRole === 'red' ? -AIR_BASE_PUCK_SPEED : AIR_BASE_PUCK_SPEED;
+  }
+
+  if (room.puck.x <= AIR_PUCK_RADIUS) {
+    room.puck.x = AIR_PUCK_RADIUS;
+    room.puck.vx = Math.abs(room.puck.vx);
+  } else if (room.puck.x >= 1 - AIR_PUCK_RADIUS) {
+    room.puck.x = 1 - AIR_PUCK_RADIUS;
+    room.puck.vx = -Math.abs(room.puck.vx);
+  }
+
+  bounceAirPuckOffPaddle(room, room.redPaddle);
+  bounceAirPuckOffPaddle(room, room.bluePaddle);
+
+  const inGoalChannel = Math.abs(room.puck.x - 0.5) <= AIR_GOAL_HALF_WIDTH;
+  if (room.puck.y <= AIR_PUCK_RADIUS) {
+    if (inGoalChannel) {
+      scoreAirGoal(io, room, 'red');
+      return;
+    }
+    room.puck.y = AIR_PUCK_RADIUS;
+    room.puck.vy = Math.abs(room.puck.vy);
+  } else if (room.puck.y >= 1 - AIR_PUCK_RADIUS) {
+    if (inGoalChannel) {
+      scoreAirGoal(io, room, 'blue');
+      return;
+    }
+    room.puck.y = 1 - AIR_PUCK_RADIUS;
+    room.puck.vy = -Math.abs(room.puck.vy);
+  }
+
+  room.puck.vx *= 0.9985;
+  room.puck.vy *= 0.9985;
+  emitAirState(io, room);
+}
+
+function startAirLoop(io, room) {
+  if (room.loopId) {
+    clearInterval(room.loopId);
+  }
+  room.loopId = setInterval(() => {
+    stepAirRoom(io, room);
+  }, AIR_TICK_MS);
+}
+
+function startAirIntro(io, room) {
+  clearTimers(room);
+  room.matchWinner = '';
+  room.redScore = 0;
+  room.blueScore = 0;
+  room.serveRole = Math.random() > 0.5 ? 'red' : 'blue';
+  resetAirRound(room, room.serveRole);
+  room.phase = 'intro';
+  room.phaseStartedAt = new Date().toISOString();
+  room.phaseEndsAt = new Date(Date.now() + AIR_INTRO_MS).toISOString();
+  markUpdated(room);
+  emitAirState(io, room);
+
+  room.timers.push(setTimeout(() => {
+    if (!room.redOnline || !room.blueOnline || !room.redReady || !room.blueReady) {
+      room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
+      markUpdated(room);
+      emitAirState(io, room);
+      return;
+    }
+
+    room.phase = 'playing';
+    room.phaseStartedAt = new Date().toISOString();
+    room.phaseEndsAt = '';
+    markUpdated(room);
+    emitAirState(io, room);
+    startAirLoop(io, room);
+  }, AIR_INTRO_MS));
+}
+
+function maybeStartAirMatch(io, room) {
+  if (room.phase !== 'lobby') {
+    return;
+  }
+  if (room.redPlayerId && room.bluePlayerId && room.redOnline && room.blueOnline && room.redReady && room.blueReady) {
+    startAirIntro(io, room);
+  } else {
+    markUpdated(room);
+    emitAirState(io, room);
+  }
+}
+
+function resetAirRoom(room) {
+  room.redReady = false;
+  room.blueReady = false;
+  room.redScore = 0;
+  room.blueScore = 0;
+  room.serveRole = 'red';
+  resetAirRound(room, room.serveRole);
+  room.matchWinner = '';
+  room.phase = 'lobby';
+  room.phaseStartedAt = '';
+  room.phaseEndsAt = '';
+  clearTimers(room);
+}
+
+function removeAirPlayer(io, room, role, clearIdentity = false) {
+  if (!role) {
+    return;
+  }
+
+  if (clearIdentity) {
+    if (role === 'red') {
+      room.redPlayerId = '';
+    } else {
+      room.bluePlayerId = '';
+    }
+  }
+
+  if (role === 'red') {
+    room.redOnline = false;
+    room.redSocketId = '';
+    room.redLastSeenAt = '';
+  } else {
+    room.blueOnline = false;
+    room.blueSocketId = '';
+    room.blueLastSeenAt = '';
+  }
+
+  resetAirRoom(room);
+  markUpdated(room);
+  emitAirState(io, room);
+}
+
 function emitTttState(io, room) {
   io.to(room.roomId).emit('ttt:state', toTttClientState(room));
 }
@@ -500,6 +851,7 @@ io.on('connection', (socket) => {
 
     socket.data.roomId = roomId;
     socket.data.userId = userId;
+    socket.data.gameType = 'rps';
     socket.join(roomId);
 
     const room = getRoom(rpsRooms, createRpsRoomState, roomId, roomCode);
@@ -628,6 +980,7 @@ io.on('connection', (socket) => {
 
     socket.data.roomId = roomId;
     socket.data.userId = userId;
+    socket.data.gameType = 'ttt';
     socket.join(roomId);
 
     const room = getRoom(tttRooms, createTttRoomState, roomId, roomCode);
@@ -768,8 +1121,145 @@ io.on('connection', (socket) => {
     removeTttPlayer(io, room, roleForSocket(room, socket), true);
   });
 
+  socket.on('air:join', ({ roomId, roomCode, userId }) => {
+    if (!roomId || !userId) {
+      return;
+    }
+
+    socket.data.roomId = roomId;
+    socket.data.userId = userId;
+    socket.data.gameType = 'air';
+    socket.join(roomId);
+
+    const room = getRoom(airRooms, createAirRoomState, roomId, roomCode);
+    const role = assignRole(room, socket, roomCode);
+
+    socket.emit('air:role', { role });
+    markUpdated(room, userId);
+    emitAirState(io, room);
+  });
+
+  socket.on('air:start', () => {
+    const room = airRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+
+    const role = roleForSocket(room, socket);
+    if (!role) {
+      return;
+    }
+
+    if (role === 'red') {
+      room.redReady = true;
+      room.redOnline = true;
+      room.redSocketId = socket.id;
+      room.redLastSeenAt = new Date().toISOString();
+    } else {
+      room.blueReady = true;
+      room.blueOnline = true;
+      room.blueSocketId = socket.id;
+      room.blueLastSeenAt = new Date().toISOString();
+    }
+
+    markUpdated(room, socket.data.userId);
+    maybeStartAirMatch(io, room);
+  });
+
+  socket.on('air:move', ({ x, y }) => {
+    const room = airRooms.get(socket.data.roomId);
+    if (!room || !['playing', 'goal', 'intro'].includes(room.phase)) {
+      return;
+    }
+
+    const role = roleForSocket(room, socket);
+    if (!role) {
+      return;
+    }
+
+    const nextX = clamp(Number(x) || 0.5, AIR_PADDLE_RADIUS, 1 - AIR_PADDLE_RADIUS);
+    const nextY = Number(y) || 0.5;
+    const key = role === 'red' ? 'redPaddle' : 'bluePaddle';
+    const paddle = room[key];
+    const clampedY = role === 'red'
+      ? clamp(nextY, 0.54, 1 - AIR_PADDLE_RADIUS)
+      : clamp(nextY, AIR_PADDLE_RADIUS, 0.46);
+    const dt = AIR_TICK_MS / 1000;
+    const vx = clamp((nextX - paddle.x) / dt, -AIR_MAX_PADDLE_SPEED, AIR_MAX_PADDLE_SPEED);
+    const vy = clamp((clampedY - paddle.y) / dt, -AIR_MAX_PADDLE_SPEED, AIR_MAX_PADDLE_SPEED);
+
+    paddle.x = nextX;
+    paddle.y = clampedY;
+    paddle.vx = vx;
+    paddle.vy = vy;
+
+    markUpdated(room, socket.data.userId);
+    emitAirState(io, room);
+  });
+
+  socket.on('air:replay', () => {
+    const room = airRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+
+    room.redReady = Boolean(room.redPlayerId && room.redOnline);
+    room.blueReady = Boolean(room.bluePlayerId && room.blueOnline);
+    room.matchWinner = '';
+    room.roundWinner = '';
+    room.goalScoredBy = '';
+
+    if (room.redReady && room.blueReady) {
+      startAirIntro(io, room);
+    } else {
+      room.phase = 'lobby';
+      room.phaseStartedAt = '';
+      room.phaseEndsAt = '';
+      markUpdated(room, socket.data.userId);
+      emitAirState(io, room);
+    }
+  });
+
+  socket.on('air:ping', () => {
+    const room = airRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+
+    const role = roleForSocket(room, socket);
+    if (!role) {
+      return;
+    }
+
+    let shouldEmit = false;
+    if (role === 'red') {
+      shouldEmit = !room.redOnline;
+      room.redOnline = true;
+      room.redLastSeenAt = new Date().toISOString();
+      room.redSocketId = socket.id;
+    } else {
+      shouldEmit = !room.blueOnline;
+      room.blueOnline = true;
+      room.blueLastSeenAt = new Date().toISOString();
+      room.blueSocketId = socket.id;
+    }
+
+    if (shouldEmit) {
+      markUpdated(room, socket.data.userId);
+      emitAirState(io, room);
+    }
+  });
+
+  socket.on('air:leave', () => {
+    const room = airRooms.get(socket.data.roomId);
+    if (!room) {
+      return;
+    }
+    removeAirPlayer(io, room, roleForSocket(room, socket), true);
+  });
+
   socket.on('disconnect', () => {
-    const rpsRoom = rpsRooms.get(socket.data.roomId);
+    const rpsRoom = socket.data.gameType === 'rps' ? rpsRooms.get(socket.data.roomId) : null;
     if (rpsRoom) {
       const rpsRole = roleForSocket(rpsRoom, socket);
       if (rpsRole) {
@@ -810,7 +1300,7 @@ io.on('connection', (socket) => {
       }
     }
 
-    const tttRoom = tttRooms.get(socket.data.roomId);
+    const tttRoom = socket.data.gameType === 'ttt' ? tttRooms.get(socket.data.roomId) : null;
     if (tttRoom) {
       const tttRole = roleForSocket(tttRoom, socket);
       if (tttRole) {
@@ -844,6 +1334,44 @@ io.on('connection', (socket) => {
           const lastSeenMs = lastSeen ? new Date(lastSeen).getTime() : 0;
           if (!lastSeenMs || (Date.now() - lastSeenMs) >= OFFLINE_MS) {
             removeTttPlayer(io, stillRoom, tttRole, true);
+          }
+        }, OFFLINE_MS);
+      }
+    }
+
+    const airRoom = socket.data.gameType === 'air' ? airRooms.get(socket.data.roomId) : null;
+    if (airRoom) {
+      const airRole = roleForSocket(airRoom, socket);
+      if (airRole) {
+        if (airRole === 'red') {
+          airRoom.redOnline = false;
+          airRoom.redReady = false;
+          airRoom.redSocketId = '';
+        } else {
+          airRoom.blueOnline = false;
+          airRoom.blueReady = false;
+          airRoom.blueSocketId = '';
+        }
+
+        airRoom.phase = 'lobby';
+        airRoom.phaseStartedAt = '';
+        airRoom.phaseEndsAt = '';
+        airRoom.roundWinner = '';
+        airRoom.goalScoredBy = '';
+        airRoom.matchWinner = '';
+        clearTimers(airRoom);
+        markUpdated(airRoom, socket.data.userId);
+        emitAirState(io, airRoom);
+
+        setTimeout(() => {
+          const stillRoom = airRooms.get(socket.data.roomId);
+          if (!stillRoom) {
+            return;
+          }
+          const lastSeen = airRole === 'red' ? stillRoom.redLastSeenAt : stillRoom.blueLastSeenAt;
+          const lastSeenMs = lastSeen ? new Date(lastSeen).getTime() : 0;
+          if (!lastSeenMs || (Date.now() - lastSeenMs) >= OFFLINE_MS) {
+            removeAirPlayer(io, stillRoom, airRole, true);
           }
         }, OFFLINE_MS);
       }

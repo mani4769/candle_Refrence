@@ -49,6 +49,7 @@ import { initializeFCMDevice } from './src/widgets/fcmWidgetSync';
 import { readWidgetNote, readSelectedRoom, saveSelectedRoom, syncWidgetNote } from './src/widgets/sharedWidget';
 import DrawingCanvas from './src/components/DrawingCanvas';
 import CameraModal from './src/components/CameraModal';
+import AirHockeyGame from './src/components/AirHockeyGame';
 import { RPS_SOCKET_URL } from './src/config/rpsSocketConfig';
 
 const DARK_BG = '#020305';
@@ -2543,7 +2544,11 @@ export default function App() {
 
             <Text style={styles.gamesHeading}>Games</Text>
 
-            <View style={styles.gamesRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.gamesRow}
+            >
               <TouchableOpacity
                 style={[styles.gameCard, styles.gameCardPink]}
                 activeOpacity={0.92}
@@ -2578,7 +2583,25 @@ export default function App() {
                   <Text style={styles.gameTitle}>Play a live room board duel</Text>
                 </View>
               </TouchableOpacity>
-            </View>
+
+              <TouchableOpacity
+                style={[styles.gameCard, styles.gameCardSky]}
+                activeOpacity={0.92}
+                onPress={() => {
+                  setActiveTab('airHockey');
+                }}
+              >
+                <View style={styles.gameBadgeRow}>
+                  <View style={[styles.gameBadge, styles.gameBadgeLight]}>
+                    <Text style={[styles.gameBadgeText, styles.gameBadgeTextDark]}>New</Text>
+                  </View>
+                </View>
+                <View>
+                  <Text style={[styles.gameEyebrow, styles.gameTextDark]}>air hockey</Text>
+                  <Text style={[styles.gameTitle, styles.gameTextDark]}>Play a fast puck duel</Text>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
 
             <View style={styles.homeEventCard}>
               <View style={styles.homeEventCardHeader}>
@@ -3060,6 +3083,12 @@ export default function App() {
               </View>
             ) : null}
           </View>
+        ) : activeTab === 'airHockey' ? (
+          <AirHockeyGame
+            activeRoom={activeRoom}
+            user={user}
+            onExit={() => setActiveTab('home')}
+          />
         ) : activeTab === 'rps' ? (
           <View style={styles.rpsScreen}>
             <View style={styles.rpsRightShade} />
@@ -3441,7 +3470,7 @@ export default function App() {
           </ScrollView>
         )}
 
-        {activeTab !== 'timelineDetail' && activeTab !== 'sparkPrompt' ? (
+        {activeTab !== 'timelineDetail' && activeTab !== 'sparkPrompt' && activeTab !== 'airHockey' ? (
           <View style={styles.bottomSparkBar}>
             <Image source={ICON_SPARK} style={styles.sparkBarIcon} resizeMode="contain" />
           </View>
@@ -4066,6 +4095,19 @@ const styles = StyleSheet.create({
   gamesRow: {
     flexDirection: 'row',
     gap: HOME_CARD_GAP,
+    paddingRight: 4,
+  },
+  gameCardSky: {
+    backgroundColor: '#82DFFF',
+  },
+  gameBadgeLight: {
+    backgroundColor: 'rgba(255,255,255,0.62)',
+  },
+  gameBadgeTextDark: {
+    color: '#124666',
+  },
+  gameTextDark: {
+    color: '#103149',
   },
   homeEventCard: {
     width: HOME_BOTTOM_ROW_WIDTH + 2,

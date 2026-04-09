@@ -105,7 +105,7 @@ class WidgetMessagingService : FirebaseMessagingService() {
   private fun fetchAndUpdateFromAppwrite(roomId: String, fallbackData: Map<String, String>) {
     thread {
       try {
-        val endpoint = "https://cloud.appwrite.io/v1"
+        val endpoint = "https://fra.cloud.appwrite.io/v1"
         val projectId = BuildConfig.APPWRITE_PROJECT_ID
         val databaseId = BuildConfig.APPWRITE_DATABASE_ID
         val collectionId = "shared_notes"
