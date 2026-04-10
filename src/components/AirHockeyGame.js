@@ -253,6 +253,13 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
     socketRef.current.emit('air:move', nextPosition);
   }
 
+  function emitStop(nextPosition) {
+    if (!socketRef.current || !nextPosition) {
+      return;
+    }
+    socketRef.current.emit('air:stop', nextPosition);
+  }
+
   function toNormalizedPosition(pageX, pageY) {
     if (!boardLayout.width || !boardLayout.height) {
       return null;
@@ -286,12 +293,14 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
       emitMove(position);
     },
     onPanResponderRelease: () => {
+      emitStop(dragPaddle || paddlePosition);
       setDragPaddle(null);
     },
     onPanResponderTerminate: () => {
+      emitStop(dragPaddle || paddlePosition);
       setDragPaddle(null);
     },
-  }), [boardLayout.height, boardLayout.width, matchState.phase, myRole]);
+  }), [boardLayout.height, boardLayout.width, dragPaddle, matchState.phase, myRole, paddlePosition]);
 
   const lobbyMessage = !bothPlayersReady
     ? 'Waiting for another user to join.'

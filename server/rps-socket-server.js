@@ -17,9 +17,9 @@ const AIR_COLLISION_PADDING = 0.018;
 const AIR_GOAL_HALF_WIDTH = 0.17;
 const AIR_MAX_PADDLE_SPEED = 4.6;
 const AIR_BASE_PUCK_SPEED = 0.92;
-const AIR_HIT_PUCK_SPEED = 1.08;
+const AIR_MIN_HIT_SPEED = 0.58;
 const AIR_MAX_PUCK_SPEED = 1.75;
-const AIR_PADDLE_INFLUENCE = 0.16;
+const AIR_PADDLE_INFLUENCE = 0.22;
 const TTT_WIN_LINES = [
   [0, 1, 2],
   [3, 4, 5],
@@ -487,18 +487,31 @@ function bounceAirPuckOffPaddle(room, paddle) {
   room.puck.x += nx * overlap;
   room.puck.y += ny * overlap;
 
-  const launchX = nx + (paddle.vx * AIR_PADDLE_INFLUENCE);
-  const launchY = ny + (paddle.vy * AIR_PADDLE_INFLUENCE);
-  const launchDistance = Math.hypot(launchX, launchY);
-  if (launchDistance < 0.0001) {
+  const dot = (room.puck.vx * nx) + (room.puck.vy * ny);
+  if (dot < 0) {
+    room.puck.vx -= 2 * dot * nx;
+    room.puck.vy -= 2 * dot * ny;
+  }
+
+  room.puck.vx += paddle.vx * AIR_PADDLE_INFLUENCE;
+  room.puck.vy += paddle.vy * AIR_PADDLE_INFLUENCE;
+
+  const nextSpeed = Math.hypot(room.puck.vx, room.puck.vy);
+  if (nextSpeed < 0.0001) {
     room.puck.vx = 0;
     room.puck.vy = 0;
     return true;
   }
 
-  const launchSpeed = clamp(AIR_HIT_PUCK_SPEED, 0, AIR_MAX_PUCK_SPEED);
-  room.puck.vx = (launchX / launchDistance) * launchSpeed;
-  room.puck.vy = (launchY / launchDistance) * launchSpeed;
+  const nextAngle = Math.atan2(room.puck.vy, room.puck.vx);
+  const paddleSpeed = Math.hypot(paddle.vx, paddle.vy);
+  const clampedSpeed = clamp(
+    Math.max(nextSpeed, paddleSpeed > 0.12 ? AIR_MIN_HIT_SPEED : 0),
+    0,
+    AIR_MAX_PUCK_SPEED,
+  );
+  room.puck.vx = Math.cos(nextAngle) * clampedSpeed;
+  room.puck.vy = Math.sin(nextAngle) * clampedSpeed;
   return true;
 }
 
@@ -1199,6 +1212,34 @@ io.on('connection', (socket) => {
     paddle.y = clampedY;
     paddle.vx = vx;
     paddle.vy = vy;
+
+    markUpdated(room, socket.data.userId);
+    emitAirState(io, room);
+  });
+
+  socket.on('air:stop', ({ x, y }) => {
+    const room = airRooms.get(socket.data.roomId);
+    if (!room || !['playing', 'goal', 'intro'].includes(room.phase)) {
+      return;
+    }
+
+    const role = roleForSocket(room, socket);
+    if (!role) {
+      return;
+    }
+
+    const nextX = clamp(Number(x) || 0.5, AIR_PADDLE_RADIUS, 1 - AIR_PADDLE_RADIUS);
+    const nextY = Number(y) || 0.5;
+    const key = role === 'red' ? 'redPaddle' : 'bluePaddle';
+    const paddle = room[key];
+    const clampedY = role === 'red'
+      ? clamp(nextY, 0.54, 1 - AIR_PADDLE_RADIUS)
+      : clamp(nextY, AIR_PADDLE_RADIUS, 0.46);
+
+    paddle.x = nextX;
+    paddle.y = clampedY;
+    paddle.vx = 0;
+    paddle.vy = 0;
 
     markUpdated(room, socket.data.userId);
     emitAirState(io, room);
