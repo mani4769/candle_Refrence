@@ -246,7 +246,7 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
 
   function emitMove(nextPosition) {
     const now = Date.now();
-    if (!socketRef.current || now - lastMoveSentAtRef.current < 10) {
+    if (!socketRef.current || now - lastMoveSentAtRef.current < 6) {
       return;
     }
     lastMoveSentAtRef.current = now;

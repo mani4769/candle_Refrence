@@ -13,11 +13,13 @@ const AIR_MATCH_SCORE = 5;
 const AIR_TICK_MS = 1000 / 60;
 const AIR_PUCK_RADIUS = 0.033;
 const AIR_PADDLE_RADIUS = 0.068;
+const AIR_COLLISION_PADDING = 0.018;
 const AIR_GOAL_HALF_WIDTH = 0.17;
-const AIR_MAX_PADDLE_SPEED = 3.4;
+const AIR_MAX_PADDLE_SPEED = 4.6;
 const AIR_BASE_PUCK_SPEED = 0.92;
+const AIR_HIT_PUCK_SPEED = 1.08;
 const AIR_MAX_PUCK_SPEED = 1.75;
-const AIR_PADDLE_INFLUENCE = 0.28;
+const AIR_PADDLE_INFLUENCE = 0.16;
 const TTT_WIN_LINES = [
   [0, 1, 2],
   [3, 4, 5],
@@ -475,7 +477,7 @@ function bounceAirPuckOffPaddle(room, paddle) {
   const dx = room.puck.x - paddle.x;
   const dy = room.puck.y - paddle.y;
   const distance = Math.hypot(dx, dy) || 0.0001;
-  const overlap = AIR_PADDLE_RADIUS + AIR_PUCK_RADIUS - distance;
+  const overlap = AIR_PADDLE_RADIUS + AIR_PUCK_RADIUS + AIR_COLLISION_PADDING - distance;
   if (overlap <= 0) {
     return false;
   }
@@ -485,26 +487,18 @@ function bounceAirPuckOffPaddle(room, paddle) {
   room.puck.x += nx * overlap;
   room.puck.y += ny * overlap;
 
-  const dot = (room.puck.vx * nx) + (room.puck.vy * ny);
-  if (dot < 0) {
-    room.puck.vx -= 2 * dot * nx;
-    room.puck.vy -= 2 * dot * ny;
-  }
-
-  room.puck.vx += paddle.vx * AIR_PADDLE_INFLUENCE;
-  room.puck.vy += paddle.vy * AIR_PADDLE_INFLUENCE;
-
-  const nextSpeed = Math.hypot(room.puck.vx, room.puck.vy);
-  if (nextSpeed < 0.03) {
+  const launchX = nx + (paddle.vx * AIR_PADDLE_INFLUENCE);
+  const launchY = ny + (paddle.vy * AIR_PADDLE_INFLUENCE);
+  const launchDistance = Math.hypot(launchX, launchY);
+  if (launchDistance < 0.0001) {
     room.puck.vx = 0;
     room.puck.vy = 0;
     return true;
   }
 
-  const cappedSpeed = clamp(nextSpeed, 0, AIR_MAX_PUCK_SPEED);
-  const nextAngle = Math.atan2(room.puck.vy, room.puck.vx);
-  room.puck.vx = Math.cos(nextAngle) * cappedSpeed;
-  room.puck.vy = Math.sin(nextAngle) * cappedSpeed;
+  const launchSpeed = clamp(AIR_HIT_PUCK_SPEED, 0, AIR_MAX_PUCK_SPEED);
+  room.puck.vx = (launchX / launchDistance) * launchSpeed;
+  room.puck.vy = (launchY / launchDistance) * launchSpeed;
   return true;
 }
 
