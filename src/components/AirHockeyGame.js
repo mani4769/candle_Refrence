@@ -13,9 +13,9 @@ import { RPS_SOCKET_URL } from '../config/rpsSocketConfig';
 
 const INTRO_MS = 2100;
 const HEARTBEAT_MS = 1000;
-const BOARD_RATIO = 0.62;
+const BOARD_RATIO = 0.54;
 const PADDLE_RADIUS = 28;
-const PUCK_RADIUS = 14;
+const PUCK_RADIUS = 24;
 const GOAL_WIDTH = 124;
 const GOAL_HEIGHT = 26;
 const GOAL_INNER_WIDTH = 92;
@@ -218,27 +218,35 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
 
   const paddleFromState = myRole === 'blue' ? matchState.bluePaddle : matchState.redPaddle;
   const paddlePosition = dragPaddle || paddleFromState;
+  const isBluePerspective = myRole === 'blue';
+
+  function mapDisplayY(y) {
+    return isBluePerspective ? 1 - y : y;
+  }
 
   const boardMetrics = useMemo(() => {
     const width = boardLayout.width || 1;
     const height = boardLayout.height || 1;
+    const puckDisplayY = mapDisplayY(matchState.puck.y);
+    const redDisplayY = mapDisplayY(matchState.redPaddle.y);
+    const blueDisplayY = mapDisplayY(matchState.bluePaddle.y);
     return {
       width,
       height,
       puckSize: PUCK_RADIUS * 2,
       paddleSize: PADDLE_RADIUS * 2,
       puckLeft: (matchState.puck.x * width) - PUCK_RADIUS,
-      puckTop: (matchState.puck.y * height) - PUCK_RADIUS,
+      puckTop: (puckDisplayY * height) - PUCK_RADIUS,
       redLeft: (matchState.redPaddle.x * width) - PADDLE_RADIUS,
-      redTop: (matchState.redPaddle.y * height) - PADDLE_RADIUS,
+      redTop: (redDisplayY * height) - PADDLE_RADIUS,
       blueLeft: (matchState.bluePaddle.x * width) - PADDLE_RADIUS,
-      blueTop: (matchState.bluePaddle.y * height) - PADDLE_RADIUS,
+      blueTop: (blueDisplayY * height) - PADDLE_RADIUS,
     };
-  }, [boardLayout.height, boardLayout.width, matchState.bluePaddle, matchState.puck, matchState.redPaddle]);
+  }, [boardLayout.height, boardLayout.width, isBluePerspective, matchState.bluePaddle, matchState.puck, matchState.redPaddle]);
 
   function emitMove(nextPosition) {
     const now = Date.now();
-    if (!socketRef.current || now - lastMoveSentAtRef.current < 16) {
+    if (!socketRef.current || now - lastMoveSentAtRef.current < 10) {
       return;
     }
     lastMoveSentAtRef.current = now;
@@ -250,7 +258,8 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
       return null;
     }
     const x = clamp(pageX / boardLayout.width, 0.08, 0.92);
-    const rawY = pageY / boardLayout.height;
+    const displayY = pageY / boardLayout.height;
+    const rawY = isBluePerspective ? 1 - displayY : displayY;
     const y = myRole === 'blue'
       ? clamp(rawY, 0.08, 0.46)
       : clamp(rawY, 0.54, 0.92);
@@ -331,11 +340,23 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
       >
         <View style={[styles.board, { aspectRatio: BOARD_RATIO }]}>
           <View style={styles.boardShade} />
-          <View style={[styles.goalShell, styles.goalTop]}>
-            <View style={[styles.goalInner, styles.goalInnerBlue]} />
+          <View style={[styles.goalShell, styles.goalTopShell, styles.goalTop]}>
+            <View
+              style={[
+                styles.goalInner,
+                styles.goalInnerTop,
+                isBluePerspective ? styles.goalInnerRed : styles.goalInnerBlue,
+              ]}
+            />
           </View>
-          <View style={[styles.goalShell, styles.goalBottom]}>
-            <View style={[styles.goalInner, styles.goalInnerRed]} />
+          <View style={[styles.goalShell, styles.goalBottomShell, styles.goalBottom]}>
+            <View
+              style={[
+                styles.goalInner,
+                styles.goalInnerBottom,
+                isBluePerspective ? styles.goalInnerBlue : styles.goalInnerRed,
+              ]}
+            />
           </View>
 
           <View style={styles.centerLine} />
@@ -354,7 +375,7 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
                   ? ((paddlePosition.x * boardMetrics.width) - PADDLE_RADIUS)
                   : boardMetrics.blueLeft,
                 top: myRole === 'blue' && dragPaddle
-                  ? ((paddlePosition.y * boardMetrics.height) - PADDLE_RADIUS)
+                  ? ((mapDisplayY(paddlePosition.y) * boardMetrics.height) - PADDLE_RADIUS)
                   : boardMetrics.blueTop,
               },
             ]}
@@ -368,7 +389,7 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
                   ? ((paddlePosition.x * boardMetrics.width) - PADDLE_RADIUS)
                   : boardMetrics.redLeft,
                 top: myRole === 'red' && dragPaddle
-                  ? ((paddlePosition.y * boardMetrics.height) - PADDLE_RADIUS)
+                  ? ((mapDisplayY(paddlePosition.y) * boardMetrics.height) - PADDLE_RADIUS)
                   : boardMetrics.redTop,
               },
             ]}
@@ -386,6 +407,11 @@ export default function AirHockeyGame({ activeRoom, user, onExit }) {
             <View style={styles.lobbyOverlay}>
               <Text style={styles.lobbyTitle}>Air Hockey</Text>
               <Text style={styles.lobbyText}>{lobbyMessage}</Text>
+              {myRole ? (
+                <Text style={[styles.lobbyMeta, myRole === 'blue' ? styles.lobbyMetaBlue : styles.lobbyMetaRed]}>
+                  {`You are ${myRole.toUpperCase()}`}
+                </Text>
+              ) : null}
               <Pressable
                 style={[styles.lobbyButton, localReadyLock && !friendOffline ? styles.lobbyButtonMuted : null]}
                 onPress={() => {
@@ -444,7 +470,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#163E69',
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 12,
   },
@@ -452,65 +478,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   sidePill: {
     backgroundColor: '#FFFFFF',
     borderRadius: 999,
     borderWidth: 2,
     borderColor: '#0E0E0E',
-    minHeight: 58,
+    minHeight: 52,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
   },
   scorePill: {
     flexDirection: 'row',
-    gap: 7,
+    gap: 6,
   },
   exitPill: {
     minWidth: 88,
   },
   scoreBlue: {
     color: '#1AA7F6',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
   },
   scoreDivider: {
     color: '#111111',
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '900',
   },
   scoreRed: {
     color: '#FF5B67',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
   },
   exitText: {
     color: '#24324A',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '900',
-    letterSpacing: 1.6,
+    letterSpacing: 1.2,
   },
   boardWrap: {
     flex: 1,
     justifyContent: 'center',
+    paddingHorizontal: 2,
   },
   board: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 10,
+    borderWidth: 12,
     borderColor: '#060606',
-    borderRadius: 26,
-    overflow: 'hidden',
+    borderRadius: 22,
+    overflow: 'visible',
     alignSelf: 'stretch',
   },
   boardShade: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 28,
-    backgroundColor: 'rgba(0,0,0,0.07)',
+    display: 'none',
   },
   goalShell: {
     position: 'absolute',
@@ -519,20 +541,32 @@ const styles = StyleSheet.create({
     width: GOAL_WIDTH,
     height: GOAL_HEIGHT,
     backgroundColor: '#050505',
-    borderBottomLeftRadius: 999,
-    borderBottomRightRadius: 999,
     alignItems: 'center',
   },
+  goalTopShell: {
+    borderTopLeftRadius: 999,
+    borderTopRightRadius: 999,
+  },
+  goalBottomShell: {
+    borderBottomLeftRadius: 999,
+    borderBottomRightRadius: 999,
+  },
   goalTop: {
-    top: -2,
+    top: -24,
   },
   goalBottom: {
-    bottom: -2,
-    transform: [{ rotate: '180deg' }],
+    bottom: -24,
   },
   goalInner: {
     width: GOAL_INNER_WIDTH,
     height: GOAL_INNER_HEIGHT,
+  },
+  goalInnerTop: {
+    borderTopLeftRadius: 999,
+    borderTopRightRadius: 999,
+    marginTop: 5,
+  },
+  goalInnerBottom: {
     borderBottomLeftRadius: 999,
     borderBottomRightRadius: 999,
     marginTop: 3,
@@ -546,20 +580,15 @@ const styles = StyleSheet.create({
   centerLine: {
     position: 'absolute',
     top: '50%',
-    left: 18,
-    right: 18,
-    height: 10,
-    marginTop: -5,
+    left: -1,
+    right: -1,
+    height: 18,
+    marginTop: -9,
     backgroundColor: '#FF2E79',
     borderRadius: 999,
   },
   centerPuckLine: {
-    position: 'absolute',
-    left: '50%',
-    width: 84,
-    marginLeft: -42,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.38)',
+    display: 'none',
   },
   centerPuckLineTop: {
     top: '32%',
@@ -613,7 +642,7 @@ const styles = StyleSheet.create({
   },
   lobbyOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(240, 246, 255, 0.78)',
+    backgroundColor: 'rgba(240, 246, 255, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -630,7 +659,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: 23,
+    marginBottom: 12,
+  },
+  lobbyMeta: {
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.8,
     marginBottom: 18,
+  },
+  lobbyMetaBlue: {
+    color: '#1AA7F6',
+  },
+  lobbyMetaRed: {
+    color: '#FF5C67',
   },
   lobbyButton: {
     minWidth: 180,

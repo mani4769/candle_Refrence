@@ -14,10 +14,10 @@ const AIR_TICK_MS = 1000 / 60;
 const AIR_PUCK_RADIUS = 0.033;
 const AIR_PADDLE_RADIUS = 0.068;
 const AIR_GOAL_HALF_WIDTH = 0.17;
-const AIR_MAX_PADDLE_SPEED = 1.85;
+const AIR_MAX_PADDLE_SPEED = 3.4;
 const AIR_BASE_PUCK_SPEED = 0.92;
 const AIR_MAX_PUCK_SPEED = 1.75;
-const AIR_PADDLE_INFLUENCE = 0.22;
+const AIR_PADDLE_INFLUENCE = 0.28;
 const TTT_WIN_LINES = [
   [0, 1, 2],
   [3, 4, 5],
@@ -494,10 +494,17 @@ function bounceAirPuckOffPaddle(room, paddle) {
   room.puck.vx += paddle.vx * AIR_PADDLE_INFLUENCE;
   room.puck.vy += paddle.vy * AIR_PADDLE_INFLUENCE;
 
-  const nextSpeed = clamp(Math.hypot(room.puck.vx, room.puck.vy), AIR_BASE_PUCK_SPEED, AIR_MAX_PUCK_SPEED);
+  const nextSpeed = Math.hypot(room.puck.vx, room.puck.vy);
+  if (nextSpeed < 0.03) {
+    room.puck.vx = 0;
+    room.puck.vy = 0;
+    return true;
+  }
+
+  const cappedSpeed = clamp(nextSpeed, 0, AIR_MAX_PUCK_SPEED);
   const nextAngle = Math.atan2(room.puck.vy, room.puck.vx);
-  room.puck.vx = Math.cos(nextAngle) * nextSpeed;
-  room.puck.vy = Math.sin(nextAngle) * nextSpeed;
+  room.puck.vx = Math.cos(nextAngle) * cappedSpeed;
+  room.puck.vy = Math.sin(nextAngle) * cappedSpeed;
   return true;
 }
 
@@ -576,7 +583,7 @@ function stepAirRoom(io, room) {
 
   if (Math.abs(room.puck.vx) < 0.001 && Math.abs(room.puck.vy) < 0.001) {
     room.puck.vx = 0;
-    room.puck.vy = room.serveRole === 'red' ? -AIR_BASE_PUCK_SPEED : AIR_BASE_PUCK_SPEED;
+    room.puck.vy = 0;
   }
 
   if (room.puck.x <= AIR_PUCK_RADIUS) {
@@ -609,6 +616,12 @@ function stepAirRoom(io, room) {
 
   room.puck.vx *= 0.9985;
   room.puck.vy *= 0.9985;
+  if (Math.abs(room.puck.vx) < 0.01) {
+    room.puck.vx = 0;
+  }
+  if (Math.abs(room.puck.vy) < 0.01) {
+    room.puck.vy = 0;
+  }
   emitAirState(io, room);
 }
 
